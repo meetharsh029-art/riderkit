@@ -205,7 +205,9 @@
   <section id="tab-docs" class="tab">
     <h2 class="h-title"><svg class="ic lg"><use href="#i-doc"/></svg>Documents</h2>
     <div id="docList"></div>
-    <small class="hint">Alerts appear in the app when a document is due within 30 days or expired. No push notifications - open the app to see them.</small>
+    <div class="glass card" id="remCard"><h3>Reminders</h3><div id="remBox"></div>
+      <small class="hint">Covers dated items only: document expiry (insurance, PUC, licence, RC), service items with a month/day interval, tyre age and pressure checks. Service due only by km cannot be reminded by date. Push needs the RiderKit server to be awake; if it is not, reminders show as soon as you open the app.</small></div>
+    <small class="hint">Alerts also appear in the app when a document is due within 30 days or expired.</small>
   </section>
 
   <section id="tab-help" class="tab">
@@ -398,6 +400,9 @@
 </nav>
 <script src="vendor/leaflet.js"></script>
 <script src="lib-core.js"></script>
+<script src="lib-extra.js"></script>
 <script src="app.js"></script>
+<script src="app-extra.js"></script>
+<div id="xToast" class="msg-toast" role="status" hidden style="position:fixed;left:12px;right:12px;bottom:88px;z-index:60;background:#0f172a;color:#fff;padding:12px 16px;border-radius:12px;font-size:16px"></div>
 </body>
 </html>

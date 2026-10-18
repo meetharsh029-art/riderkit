@@ -4,6 +4,7 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
 const { sanitize, FeedbackStore, safeEq } = require('./feedback');
+const { PushService } = require('./push');
 const { Accounts } = require('./auth'), { openKV } = require('./kv'), { makeMailer } = require('./mailer'), { makeSms } = require('./sms');
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
@@ -13,9 +14,11 @@ const CORS_ORIGINS = new Set(['https://localhost', 'http://localhost', 'capacito
 function createServer(opts = {}) {
   const store = new GroupStore(opts.store || { emptyTtlMs: +process.env.GROUP_EMPTY_TTL_MS || undefined, abandonedTtlMs: +process.env.GROUP_ABANDONED_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
   const lim = new Limiter(opts.now);
-  let acc = opts.accounts || null; const accounts = () => acc || (acc = new Accounts({ kv: openKV(process.env), mailer: makeMailer(process.env), sms: makeSms(process.env), limits: opts.authLimits }));
+  let _kv = opts.kv || null; const getKV = () => _kv || (_kv = openKV(process.env)); // ONE kv instance shared by accounts, push and pins (FileKV must not be opened twice)
+  let acc = opts.accounts || null; const accounts = () => acc || (acc = new Accounts({ kv: getKV(), mailer: makeMailer(process.env), sms: makeSms(process.env), limits: opts.authLimits }));
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
-  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3] }, opts.limits);
+  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3], pushSync: [12, 60e3], pushTest: [3, 3600e3] }, opts.limits);
+  let _push = opts.push || null; const push = () => _push || (_push = new PushService({ kv: getKV() }));
   const fb = new FeedbackStore(opts.feedbackFile, opts.feedbackMaxBytes);
   const adminToken = () => opts.adminToken !== undefined ? opts.adminToken : process.env.ADMIN_TOKEN || '';
   const ipOf = req => (trust && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
@@ -77,6 +80,14 @@ function createServer(opts = {}) {
       }
       throw new HttpError(405, 'method not allowed');
     }
+    if (parts[0] === 'push') { const act = parts[1], P = push();
+      if (req.method === 'GET' && act === 'key') return json(res, 200, { key: await P.publicKey() });
+      if (req.method !== 'POST') throw new HttpError(405, 'method not allowed');
+      limit(lim.hit('ps:' + ip, ...L.pushSync), 'too many requests, slow down'); const b = await body(req, 16384);
+      if (act === 'sync') return json(res, 200, await P.sync(b));
+      if (act === 'unsubscribe') return json(res, 200, { ok: true, removed: await P.remove(b.endpoint) });
+      if (act === 'test') { limit(lim.hit('pt:' + P.id(String(b.endpoint || '')), ...L.pushTest), 'test notification limit reached, try later'); return json(res, 200, await P.test(b.endpoint)); }
+      throw new HttpError(404, 'not found'); }
     if (parts[0] === 'auth') return authApi(req, res, parts.slice(1), ip);
     if (parts[0] !== 'groups') throw new HttpError(404, 'not found');
     if (parts.length === 1 && req.method === 'POST') {
@@ -152,10 +163,10 @@ function createServer(opts = {}) {
     try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveStatic(req, res, url); }
     catch (e) { if (res.headersSent) return res.end(); const s = e.status || 500; if (s === 500) console.error(e); json(res, s, { error: s === 500 ? 'server error' : e.message }); }
   });
-  const timers = [setInterval(() => store.flush(), opts.flushMs || 1000), setInterval(() => { store.sweep(); lim.gc(); if (acc) acc.sweep().catch(() => {}); }, opts.sweepMs || 60e3)];
+  const timers = [setInterval(() => store.flush(), opts.flushMs || 1000), setInterval(() => { store.sweep(); lim.gc(); if (acc) acc.sweep().catch(() => {}); }, opts.sweepMs || 60e3), setInterval(() => { push().sweep().catch(e => console.error('push sweep', e.message)); }, opts.pushSweepMs || 30 * 60e3)];
   timers.forEach(t => t.unref());
   server.on('close', () => timers.forEach(clearInterval));
-  server.store = store; return server;
+  server.store = store; server.push = () => push(); return server;
 }
 if (require.main === module) { const port = +process.env.PORT || 8080; createServer().listen(port, '0.0.0.0', () => console.log('RiderKit server on :' + port)); }
 module.exports = { createServer };

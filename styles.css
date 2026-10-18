@@ -355,3 +355,5 @@ html:not([data-theme=dark]) .ptt:not(.rec){background:#2563eb;color:#fff;border-
 .card-h{flex-wrap:wrap}
 select{padding-right:36px}
 .glass .hero-in small:first-child,.hero-in small:first-child{font-size:10px;letter-spacing:.03em;font-weight:600}.glass .hero-in small{font-size:12px}
+
+.remlist{margin:8px 0;padding-left:18px}.remlist li{margin:4px 0;font-size:15px}

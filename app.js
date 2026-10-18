@@ -50,6 +50,7 @@ function showTab(name) {
   if (name === 'service') renderMaint();
   if (name === 'docs') renderDocs();
   if (name === 'help') renderContacts();
+  (window.__rkOnTab || []).forEach(f => { try { f(name); } catch (e) { console.warn(e); } });
 }
 function closeMore() { $('moreSheet').hidden = true; $('navMore').setAttribute('aria-expanded', 'false'); }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -992,6 +993,7 @@ acctInit();
 // ---------- init ----------
 applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();
+window.__rkApp = { vehicleState, showTab, getVehicles, activeVehicle, esc, get G() { return G; }, get map() { return map; } };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW failed', e));
 })();
 
