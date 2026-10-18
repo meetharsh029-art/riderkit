@@ -51,3 +51,6 @@ API (all need the rider token): `POST /api/groups/:code/say {token,type}`; `POST
 Server limits (all in memory, nothing on disk): clip <= 96 KB, 5 clips / 30 s per rider, 30 / 10 min per group, max 8 clips and 512 KB held per group, clips deleted after 3 min; quick messages 8 / 10 s per rider, 60 / min per group; log keeps 50.
 Limitations: not tested on real phones; works only while the app is open on screen (a web page/WebView cannot record or play with the screen locked); no Bluetooth intercom; needs mic permission (Android `RECORD_AUDIO` in the Capacitor manifest).
 Tests: `node tests/messages.test.js` (multi-client server) and `node tests/e2e.messages.js` (two headless Chrome riders with a fake microphone).
+
+### Accounts (optional)
+Email sign-up with emailed code, login, reset, delete; phone OTP behind a disabled provider; swappable storage (file / Postgres). See ACCOUNTS.md for setup and the exact owner steps. Tests: `node tests/auth.test.js`, `node tests/kv.test.js`, `node tests/e2e.account.js`.

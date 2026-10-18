@@ -946,6 +946,49 @@ async function pttSend(blob, dur) { const s = G.sess; if (!s) return; const st =
   b.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); pttStart(); } });
   b.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pttStop(); } }); }
 
+// ---------- optional account (email + password, emailed code). Guests are unaffected. ----------
+const AUTH = { cfg: null, user: null, mode: 'loading', email: '', msg: '' };
+const authTok = () => { try { return localStorage.getItem('rk-auth') || ''; } catch { return ''; } };
+const authSetTok = t => { try { t ? localStorage.setItem('rk-auth', t) : localStorage.removeItem('rk-auth'); } catch {} };
+async function authApi(method, path, body) {
+  const h = {}; if (body) h['content-type'] = 'application/json'; if (authTok()) h.authorization = 'Bearer ' + authTok();
+  const r = await fetch(API_BASE + '/api/auth' + path, { method, headers: h, body: body ? JSON.stringify(body) : undefined }); let j = {}; try { j = await r.json(); } catch {}
+  if (!r.ok) { const e = new Error(j.error || 'HTTP ' + r.status); e.status = r.status; throw e; } return j; }
+function renderAcct() {
+  const box = $('acct'), m = AUTH.msg ? `<div class="hint" role="status">${esc(AUTH.msg)}</div>` : '';
+  const f = (id, label, type = 'text', extra = '') => `<label for="${id}">${label}</label><input id="${id}" type="${type}" ${extra}>`;
+  if (AUTH.mode === 'loading') box.innerHTML = '<p class="hint">Checking…</p>';
+  else if (AUTH.mode === 'off') box.innerHTML = '<p class="hint">Accounts are not available on this server yet. Everything else works as a guest.</p>';
+  else if (AUTH.mode === 'in') box.innerHTML = `<p>Signed in as <b>${esc(AUTH.user.email || AUTH.user.phone)}</b></p><div class="row"><button type="button" id="aOut" class="ghost">Sign out</button><button type="button" id="aDelAsk" class="ghost">Delete account…</button></div>
+    <div id="aDel" hidden><p class="hint">This permanently deletes your account (email, password, sign-ins). Your rides stay on your device. This cannot be undone.</p>${AUTH.user.email ? f('aDelPw', 'Confirm with your password', 'password', 'autocomplete="current-password"') : ''}<button type="button" id="aDelGo" class="danger">Delete my account now</button></div>${m}`;
+  else if (AUTH.mode === 'verify') box.innerHTML = `<p>We emailed a 6-digit code to <b>${esc(AUTH.email)}</b>.</p>${f('aCode', 'Verification code', 'text', 'inputmode="numeric" autocomplete="one-time-code" maxlength="6"')}<div class="row"><button type="button" id="aVerify" class="primary">Verify</button><button type="button" id="aBack" class="ghost">Back</button></div>${m}`;
+  else if (AUTH.mode === 'forgot') box.innerHTML = `${f('aEmail', 'Email', 'email', 'autocomplete="email" value="' + esc(AUTH.email) + '"')}<button type="button" id="aSendReset" class="primary">Email me a reset code</button>${AUTH.sent ? f('aCode', 'Reset code', 'text', 'inputmode="numeric" maxlength="6"') + f('aNewPw', 'New password (min ' + AUTH.cfg.pwMin + ' characters)', 'password', 'autocomplete="new-password"') + '<button type="button" id="aReset" class="primary">Set new password</button>' : ''}<button type="button" id="aBack" class="ghost">Back</button>${m}`;
+  else box.innerHTML = `${f('aEmail', 'Email', 'email', 'autocomplete="email" value="' + esc(AUTH.email) + '"')}${f('aPw', 'Password', 'password', 'autocomplete="current-password"')}<div class="row"><button type="button" id="aLogin" class="primary">Sign in</button><button type="button" id="aReg" class="ghost">Create account</button></div><button type="button" id="aForgot" class="link">Forgot password?</button><p class="hint">New passwords need at least ${AUTH.cfg.pwMin} characters.</p>${m}`;
+  if (AUTH.mode === 'in' && AUTH.delOpen) { $('aDel').hidden = false; }
+}
+function acctMode(mode, msg = '') { AUTH.mode = mode; AUTH.msg = msg; if (mode !== 'forgot') AUTH.sent = false; renderAcct(); }
+async function acctInit() {
+  try { AUTH.cfg = await authApi('GET', '/config'); } catch { AUTH.cfg = null; }
+  if (!AUTH.cfg || !AUTH.cfg.email) return acctMode('off');
+  if (authTok()) { try { AUTH.user = (await authApi('GET', '/me')).user; return acctMode('in'); } catch (e) { if (e.status === 401) authSetTok(''); } }
+  acctMode('out'); }
+$('acct').addEventListener('click', async e => {
+  const id = e.target.closest('button') && e.target.closest('button').id; if (!id) return; const v = x => ($(x) ? $(x).value.trim() : ''); const keep = () => { AUTH.email = v('aEmail') || AUTH.email; };
+  try {
+    if (id === 'aLogin') { keep(); const r = await authApi('POST', '/login', { email: v('aEmail'), password: $('aPw').value }); authSetTok(r.token); AUTH.user = r.user; acctMode('in'); }
+    else if (id === 'aReg') { keep(); await authApi('POST', '/register', { email: v('aEmail'), password: $('aPw').value }); acctMode('verify'); }
+    else if (id === 'aVerify') { const r = await authApi('POST', '/verify', { email: AUTH.email, code: v('aCode') }); authSetTok(r.token); AUTH.user = r.user; acctMode('in'); }
+    else if (id === 'aBack') acctMode('out');
+    else if (id === 'aForgot') { keep(); acctMode('forgot'); }
+    else if (id === 'aSendReset') { keep(); await authApi('POST', '/forgot', { email: v('aEmail') }); AUTH.sent = true; acctMode('forgot', 'If that address has an account, a code is on its way.'); AUTH.sent = true; renderAcct(); }
+    else if (id === 'aReset') { const r = await authApi('POST', '/reset', { email: AUTH.email, code: v('aCode'), password: $('aNewPw').value }); authSetTok(r.token); AUTH.user = r.user; acctMode('in', 'Password changed.'); }
+    else if (id === 'aOut') { try { await authApi('POST', '/logout', {}); } catch {} authSetTok(''); AUTH.user = null; acctMode('out', 'Signed out.'); }
+    else if (id === 'aDelAsk') { AUTH.delOpen = !AUTH.delOpen; $('aDel').hidden = !AUTH.delOpen; }
+    else if (id === 'aDelGo') { await authApi('POST', '/delete', { password: v('aDelPw') }); authSetTok(''); AUTH.user = null; AUTH.delOpen = false; acctMode('out', 'Your account was deleted.'); }
+  } catch (er) { AUTH.msg = er.message; const keepOpen = AUTH.delOpen; renderAcct(); if (keepOpen && $('aDel')) $('aDel').hidden = false; }
+});
+acctInit();
+
 // ---------- init ----------
 applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();

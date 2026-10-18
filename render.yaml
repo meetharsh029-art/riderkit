@@ -3,7 +3,7 @@ services:
     name: riderkit
     runtime: node
     plan: free
-    buildCommand: echo "no build step"
+    buildCommand: npm install --omit=dev --no-audit --no-fund   # installs the optional pg driver (only used when DATABASE_URL is set)
     startCommand: node server/server.js
     healthCheckPath: /healthz
     autoDeploy: true
@@ -15,4 +15,10 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: ADMIN_TOKEN
+        sync: false
+      - key: RESEND_API_KEY   # accounts: emailed codes (leave unset = accounts disabled in production)
+        sync: false
+      - key: EMAIL_FROM       # e.g. RiderKit <no-reply@yourdomain.com>, must be on a domain verified in Resend
+        sync: false
+      - key: DATABASE_URL     # accounts storage: Neon/Supabase Postgres URL. Unset = JSON file (LOST on every Render free restart/redeploy)
         sync: false

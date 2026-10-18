@@ -4,14 +4,16 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
 const { sanitize, FeedbackStore, safeEq } = require('./feedback');
+const { Accounts } = require('./auth'), { openKV } = require('./kv'), { makeMailer } = require('./mailer'), { makeSms } = require('./sms');
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
-const STATIC_BLOCK = /^\/(server|tests|capacitor|node_modules)(\/|$)|^\/store(\/(?!privacy-policy\.html$)|$)|^\/\.|\.md$/i;
+const STATIC_BLOCK = /^\/(server|tests|capacitor|node_modules)(\/|$)|^\/store(\/(?!privacy-policy\.html$)|$)|^\/\.|^\/data(\/|$)|\.md$/i;
 
 const CORS_ORIGINS = new Set(['https://localhost', 'http://localhost', 'capacitor://localhost', ...String(process.env.CORS_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean)]);
 function createServer(opts = {}) {
   const store = new GroupStore(opts.store || { emptyTtlMs: +process.env.GROUP_EMPTY_TTL_MS || undefined, abandonedTtlMs: +process.env.GROUP_ABANDONED_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
   const lim = new Limiter(opts.now);
+  let acc = opts.accounts || null; const accounts = () => acc || (acc = new Accounts({ kv: openKV(process.env), mailer: makeMailer(process.env), sms: makeSms(process.env), limits: opts.authLimits }));
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
   const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3] }, opts.limits);
   const fb = new FeedbackStore(opts.feedbackFile, opts.feedbackMaxBytes);
@@ -26,6 +28,32 @@ function createServer(opts = {}) {
     req.on('end', () => { if (n > max) return bad(new HttpError(413, 'body too large')); if (!ch.length) return ok({}); try { const o = JSON.parse(Buffer.concat(ch)); ok(o && typeof o === 'object' ? o : {}); } catch { bad(new HttpError(400, 'bad json')); } });
     req.on('error', bad); });
   const limit = (ok, msg = 'rate limit exceeded') => { if (!ok) throw new HttpError(429, msg); };
+
+  // Optional accounts. Guests are unaffected: no group/ride endpoint requires these. Auth is a Bearer session token (hash stored server-side).
+  async function authApi(req, res, p, ip) {
+    const A = accounts(), ua = req.headers['user-agent'], bearer = () => { const h = String(req.headers.authorization || ''); return h.startsWith('Bearer ') ? h.slice(7) : ''; };
+    const me = async () => { const u = await A.session(bearer()); if (!u) throw new HttpError(401, 'not signed in'); return u; };
+    const act = p.join('/');
+    if (req.method === 'GET' && act === 'config') return json(res, 200, A.config());
+    if (req.method === 'GET' && act === 'me') { const u = await me(); return json(res, 200, { user: { id: u.id, email: u.email, phone: u.phone, createdAt: u.createdAt } }); }
+    if (req.method !== 'POST') throw new HttpError(405, 'method not allowed');
+    const b = await body(req, 2048);
+    switch (act) {
+      case 'register': return json(res, 200, await A.register(ip, b.email, b.password));
+      case 'verify': return json(res, 200, await A.verifyEmail(ip, b.email, b.code, ua));
+      case 'login': return json(res, 200, await A.login(ip, b.email, b.password, ua));
+      case 'forgot': return json(res, 200, await A.forgot(ip, b.email));
+      case 'reset': return json(res, 200, await A.reset(ip, b.email, b.code, b.password, ua));
+      case 'logout': await A.logout(bearer()); return json(res, 200, { ok: true });
+      case 'logout-all': { const u = await me(); await A.logoutAll(u.id); return json(res, 200, { ok: true }); }
+      case 'change-password': { const u = await me(); return json(res, 200, await A.changePassword(ip, u, b.oldPassword, b.newPassword)); }
+      case 'delete': { const u = await me(); return json(res, 200, await A.deleteAccount(ip, u, b)); }
+      case 'phone/start': return json(res, 200, await A.phoneStart(ip, b.phone));
+      case 'phone/verify': return json(res, 200, await A.phoneVerify(ip, b.phone, b.code, ua));
+      case 'phone/delete-code': { const u = await me(); if (!u.phone) throw new HttpError(400, 'no phone on this account'); return json(res, 200, await A.phoneStart(ip, u.phone, 'delete')); }
+    }
+    throw new HttpError(404, 'not found');
+  }
 
   async function api(req, res, url) {
     const ip = ipOf(req);
@@ -49,6 +77,7 @@ function createServer(opts = {}) {
       }
       throw new HttpError(405, 'method not allowed');
     }
+    if (parts[0] === 'auth') return authApi(req, res, parts.slice(1), ip);
     if (parts[0] !== 'groups') throw new HttpError(404, 'not found');
     if (parts.length === 1 && req.method === 'POST') {
       limit(lim.hit('c:' + ip, ...L.create), 'too many groups created, slow down');
@@ -123,7 +152,7 @@ function createServer(opts = {}) {
     try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveStatic(req, res, url); }
     catch (e) { if (res.headersSent) return res.end(); const s = e.status || 500; if (s === 500) console.error(e); json(res, s, { error: s === 500 ? 'server error' : e.message }); }
   });
-  const timers = [setInterval(() => store.flush(), opts.flushMs || 1000), setInterval(() => { store.sweep(); lim.gc(); }, opts.sweepMs || 60e3)];
+  const timers = [setInterval(() => store.flush(), opts.flushMs || 1000), setInterval(() => { store.sweep(); lim.gc(); if (acc) acc.sweep().catch(() => {}); }, opts.sweepMs || 60e3)];
   timers.forEach(t => t.unref());
   server.on('close', () => timers.forEach(clearInterval));
   server.store = store; return server;

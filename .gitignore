@@ -15,3 +15,5 @@ capacitor/
 PLAN.md
 RESEARCH.md
 STATUS.md
+data/
+*.tmp
