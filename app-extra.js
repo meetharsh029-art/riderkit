@@ -131,5 +131,24 @@ async function onFix(fix) { const G = A.G; if (!fix || !G.sess || !G.route) { if
 setInterval(() => { const G = A.G; if (G.sess && G.route && G.fix && X.navKeyOf(G.route) !== NV.key) onFix(G.fix); }, 1500); // new route (set destination / re-route): initialise without waiting for the next GPS fix
 window.__rkOnFix = onFix; window.__rkNavState = NV;
 window.__rkOnTab.push(name => { if (name === 'group') navInit(); }); setTimeout(navInit, 500);
+
+// ===== Stage 4: solo-ride live share link (read-only, expires) =====
+const LV = { sess: null, watch: null, last: 0, fix: null, timer: null };
+const lvLoad = () => { try { const s = JSON.parse(localStorage.getItem('rk-live') || 'null'); return s && s.id && s.key && s.expiresAt > Date.now() ? s : null; } catch { return null; } };
+function lvRender() { const s = LV.sess; $('liveOff').hidden = !!s; $('liveOn').hidden = !s; if (!s) return; $('liveLink').value = (API || location.origin) + '/live.html#' + s.id;
+  const left = Math.max(0, Math.round((s.expiresAt - Date.now()) / 60000)); $('liveStatus').textContent = (LV.fix ? 'Sharing now' : 'Waiting for GPS') + ' \u00b7 ends in ' + (left >= 60 ? Math.floor(left / 60) + ' h ' + left % 60 + ' min' : left + ' min'); }
+function lvWatch() { if (LV.watch != null || !navigator.geolocation) return; LV.watch = navigator.geolocation.watchPosition(p => { LV.fix = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, speed: p.coords.speed }; lvSend(); }, e => { $('liveMsg').textContent = 'GPS unavailable: ' + e.message; }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }); }
+async function lvSend() { const s = LV.sess, f = LV.fix; if (!s || !f) return; const wait = 4000 - (Date.now() - LV.last); if (wait > 0) { clearTimeout(LV.trail); LV.trail = setTimeout(lvSend, wait + 20); return; } // throttle, but never drop the latest fix if (s.expiresAt <= Date.now()) return lvEnd('The link has expired.'); LV.last = Date.now();
+  try { await jfetch('POST', '/api/live/' + s.id + '/update', { key: s.key, lat: f.lat, lng: f.lng, acc: f.acc, speed: f.speed != null && f.speed >= 0 ? f.speed : undefined }, 8000); $('liveMsg').textContent = ''; lvRender(); }
+  catch (e) { if (e.status === 410 || e.status === 404 || e.status === 403) lvEnd(e.status === 403 ? 'This link is no longer yours.' : 'The link ended.'); else $('liveMsg').textContent = 'Could not send position (will retry): ' + e.message; } }
+function lvEnd(msg) { if (LV.watch != null) { navigator.geolocation.clearWatch(LV.watch); LV.watch = null; } clearInterval(LV.timer); LV.sess = null; LV.fix = null; try { localStorage.removeItem('rk-live'); } catch {} lvRender(); $('liveMsg').textContent = msg || ''; }
+function lvResume() { LV.sess = lvLoad(); if (LV.sess) { lvWatch(); clearInterval(LV.timer); LV.timer = setInterval(() => { lvRender(); lvSend(); }, 5000); } else { try { localStorage.removeItem('rk-live'); } catch {} } lvRender(); }
+$('liveStart').onclick = async () => { $('liveMsg').textContent = 'Creating link...'; try { const n = $('liveName').value.trim(); if (n) { const st = (await K.kvGet('settings')) || {}; if (!st.name) { st.name = n; await K.kvSet('settings', st); } }
+    const r = await jfetch('POST', '/api/live', { name: n, hours: +$('liveHours').value }); LV.sess = { id: r.id, key: r.key, expiresAt: r.expiresAt }; localStorage.setItem('rk-live', JSON.stringify(LV.sess)); $('liveMsg').textContent = ''; lvResume(); }
+  catch (e) { $('liveMsg').textContent = 'Could not start sharing: ' + e.message; } };
+$('liveStop').onclick = async () => { const s = LV.sess; if (!s) return; try { await jfetch('POST', '/api/live/' + s.id + '/stop', { key: s.key }, 8000); } catch {} lvEnd('Sharing stopped. The link no longer shows your location.'); };
+$('liveCopy').onclick = async () => { try { await navigator.clipboard.writeText($('liveLink').value); $('liveMsg').textContent = 'Link copied.'; } catch { $('liveLink').select(); $('liveMsg').textContent = 'Press and hold the link to copy it.'; } };
+$('liveShare').onclick = async () => { const url = $('liveLink').value, text = 'Follow my ride live (read-only link, expires): ' + url; try { if (navigator.share) await navigator.share({ title: 'RiderKit live location', text, url }); else { window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener'); } } catch {} };
+window.__rkLive = LV; setTimeout(lvResume, 800);
 //__STAGES__
 })();

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>RiderKit live location</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>body{margin:0;font:16px/1.4 Inter,system-ui,sans-serif;color:#0f172a;background:#f8fafc}header{padding:14px 16px;background:#fff;border-bottom:1px solid #e2e8f0}h1{font-size:20px;margin:0}#status{margin-top:4px;color:#475569}#map{height:calc(100vh - 150px);min-height:300px}footer{padding:10px 16px;font-size:13px;color:#475569}.bad{color:#b91c1c;font-weight:700}.ok{color:#15803d;font-weight:700}#msg{padding:24px 16px;font-size:18px}</style></head>
+<body><header><h1 id="title">RiderKit live location</h1><div id="status" role="status" aria-live="polite">Loading&hellip;</div></header>
+<div id="msg" hidden></div><div id="map"></div>
+<footer>Read-only link. It shows the rider's last known position and updates about every 5 seconds while their phone has RiderKit open with GPS on. If the phone loses signal or the app goes to the background, the position can be old: check the "last seen" time. Do not rely on this for emergencies; call the rider or 112. Map &copy; OpenStreetMap contributors.</footer>
+<script src="vendor/leaflet.js"></script>
+<script>
+(function () {
+  var id = (location.hash.match(/^#([\w-]{16,40})$/) || location.search.match(/[?&]id=([\w-]{16,40})/) || [])[1];
+  var $ = function (i) { return document.getElementById(i); }, map, mk, line, first = true, timer, offset = 0;
+  function fail(t) { $('map').hidden = true; $('msg').hidden = false; $('msg').textContent = t; $('status').textContent = ''; clearInterval(timer); }
+  function ago(ms) { var s = Math.round(ms / 1000); return s < 60 ? s + ' s ago' : s < 3600 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; }
+  function left(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min'; }
+  function draw(d) {
+    $('title').textContent = (d.name ? d.name + ' is sharing a live location' : 'Live location');
+    var el = Date.now() + offset; if (!d.pos) { $('status').innerHTML = 'Waiting for the first GPS position&hellip;'; return; }
+    $('status').innerHTML = (d.stale ? '<span class="bad">Last seen ' + ago(d.ageMs + (Date.now() - d.recv)) + '</span>' : '<span class="ok">Live, updated ' + ago(d.ageMs + (Date.now() - d.recv)) + '</span>') + (d.pos.speed != null ? ' &middot; ' + Math.round(d.pos.speed * 3.6) + ' km/h' : '') + ' &middot; link ends in ' + left(d.expiresAt - d.now - (Date.now() - d.recv));
+    var ll = [d.pos.lat, d.pos.lng];
+    if (!map) { map = L.map('map').setView(ll, 15); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map); line = L.polyline([], { color: '#2563eb', weight: 4, opacity: .8 }).addTo(map); mk = L.circleMarker(ll, { radius: 9, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(map); }
+    mk.setLatLng(ll); line.setLatLngs(d.trail.concat([ll])); if (first) { first = false; map.setView(ll, 15); } else if (!map.getBounds().contains(ll)) map.panTo(ll);
+    $('map').setAttribute('aria-label', 'Map showing the rider position');
+  }
+  function poll() { fetch('api/live/' + id, { cache: 'no-store' }).then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); }).then(function (x) {
+    if (x.r.status === 410 || x.r.status === 404) return fail(x.r.status === 410 ? x.j.error + ' Ask them for a new link if you still need it.' : 'This link is not valid (it may have expired).');
+    if (!x.r.ok) { $('status').textContent = x.j.error || 'Problem loading, retrying...'; return; } x.j.recv = Date.now(); draw(x.j); }).catch(function () { $('status').textContent = 'No connection, retrying...'; }); }
+  if (!id) return fail('This link is incomplete.'); poll(); timer = setInterval(poll, 8000);
+})();
+</script></body></html>

@@ -147,6 +147,12 @@
     <label class="switch tgl"><input type="checkbox" id="crashOn"><span class="knob" aria-hidden="true"></span><span>Crash alert <small>(uses motion sensors)</small></span></label>
     <div id="crashMsg" class="hint"></div>
     <button id="btnTestCrash" class="ghost small">Test alert countdown</button>
+    <div class="glass card" id="liveCard"><h3>Share live location with family</h3>
+      <div id="liveOff"><div class="row"><label>Name shown<input id="liveName" maxlength="24" placeholder="e.g. Harsh" autocomplete="off"></label><label>Link lasts<select id="liveHours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="4" selected>4 hours</option><option value="8">8 hours</option><option value="12">12 hours</option></select></label></div>
+        <button id="liveStart" class="primary">Start sharing</button></div>
+      <div id="liveOn" hidden><p id="liveStatus" role="status"></p><input id="liveLink" readonly aria-label="Share link"><div class="row"><button id="liveShare" class="primary small">Send link</button><button id="liveCopy" class="small">Copy</button><button id="liveStop" class="danger small">Stop sharing</button></div></div>
+      <p id="liveMsg" class="hint" role="status"></p>
+      <small class="hint">Family can open the link without installing anything. They see only your latest position, a short trail, your name and when it ends; they cannot see anything else or track you after it expires or you stop. Anyone who has the link can view it, so send it only to people you trust. Needs RiderKit open with GPS on (phones pause GPS in the background, so the link may show an older position).</small></div>
   </section>
 
   <section id="tab-log" class="tab">

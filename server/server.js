@@ -4,7 +4,7 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
 const { sanitize, FeedbackStore, safeEq } = require('./feedback');
-const { PushService } = require('./push'), { PinStore, PinError, TYPES: PIN_TYPES } = require('./pins');
+const { PushService } = require('./push'), { PinStore, PinError, TYPES: PIN_TYPES } = require('./pins'), { LiveStore, LiveError } = require('./live');
 const { Accounts } = require('./auth'), { openKV } = require('./kv'), { makeMailer } = require('./mailer'), { makeSms } = require('./sms');
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
@@ -17,8 +17,9 @@ function createServer(opts = {}) {
   let _kv = opts.kv || null; const getKV = () => _kv || (_kv = openKV(process.env)); // ONE kv instance shared by accounts, push and pins (FileKV must not be opened twice)
   let acc = opts.accounts || null; const accounts = () => acc || (acc = new Accounts({ kv: getKV(), mailer: makeMailer(process.env), sms: makeSms(process.env), limits: opts.authLimits }));
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
-  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3], pinAdd: [5, 3600e3], pinAddIp: [12, 3600e3], pinVote: [60, 3600e3], pinReport: [10, 3600e3], pinRead: [60, 60e3], pushSync: [12, 60e3], pushTest: [3, 3600e3] }, opts.limits);
+  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3], liveCreate: [6, 3600e3], liveUpdate: [1, 2000], liveRead: [40, 60e3], pinAdd: [5, 3600e3], pinAddIp: [12, 3600e3], pinVote: [60, 3600e3], pinReport: [10, 3600e3], pinRead: [60, 60e3], pushSync: [12, 60e3], pushTest: [3, 3600e3] }, opts.limits);
   let _pins = opts.pins || null; const pins = () => _pins || (_pins = new PinStore({ kv: getKV() }));
+  const live = opts.live || new LiveStore({ now: opts.now });
   let _push = opts.push || null; const push = () => _push || (_push = new PushService({ kv: getKV() }));
   const fb = new FeedbackStore(opts.feedbackFile, opts.feedbackMaxBytes);
   const adminToken = () => opts.adminToken !== undefined ? opts.adminToken : process.env.ADMIN_TOKEN || '';
@@ -81,6 +82,14 @@ function createServer(opts = {}) {
       }
       throw new HttpError(405, 'method not allowed');
     }
+    if (parts[0] === 'live') { const wrap = fn => { try { return fn(); } catch (e) { throw e instanceof LiveError ? new HttpError(e.status, e.message) : e; } }, id = parts[1], act = parts[2];
+      if (req.method === 'GET' && id) { limit(lim.hit('lr:' + ip + id, ...L.liveRead), 'polling too fast'); return json(res, 200, wrap(() => live.view(id))); }
+      if (req.method !== 'POST') throw new HttpError(405, 'method not allowed');
+      if (!id) { limit(lim.hit('lc:' + ip, ...L.liveCreate), 'too many live links created, try later'); const b = await body(req); return json(res, 201, wrap(() => live.create(b))); }
+      const b = await body(req);
+      if (act === 'update') { limit(lim.hit('lu:' + id, ...L.liveUpdate), 'too frequent'); return json(res, 200, wrap(() => live.update(id, b.key, b))); }
+      if (act === 'stop') return json(res, 200, wrap(() => live.stop(id, b.key)));
+      throw new HttpError(404, 'not found'); }
     if (parts[0] === 'pins') { const P = pins(), act = parts[1], dev = String(req.headers['x-device-id'] || '');
       const wrap = fn => fn().catch(e => { throw e instanceof PinError ? new HttpError(e.status, e.message) : e; });
       if (req.method === 'GET' && !act) { limit(lim.hit('pr:' + ip, ...L.pinRead), 'too many map requests, slow down'); const bb = String(q.get('bbox') || '').split(',').map(Number); const types = String(q.get('types') || '').split(',').filter(x => PIN_TYPES[x]);
@@ -176,10 +185,10 @@ function createServer(opts = {}) {
     try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveStatic(req, res, url); }
     catch (e) { if (res.headersSent) return res.end(); const s = e.status || 500; if (s === 500) console.error(e); json(res, s, { error: s === 500 ? 'server error' : e.message }); }
   });
-  const timers = [setInterval(() => store.flush(), opts.flushMs || 1000), setInterval(() => { store.sweep(); lim.gc(); if (acc) acc.sweep().catch(() => {}); }, opts.sweepMs || 60e3), setInterval(() => { push().sweep().catch(e => console.error('push sweep', e.message)); pins().sweep().catch(() => {}); }, opts.pushSweepMs || 30 * 60e3)];
+  const timers = [setInterval(() => store.flush(), opts.flushMs || 1000), setInterval(() => { store.sweep(); lim.gc(); if (acc) acc.sweep().catch(() => {}); }, opts.sweepMs || 60e3), setInterval(() => { push().sweep().catch(e => console.error('push sweep', e.message)); pins().sweep().catch(() => {}); }, opts.pushSweepMs || 30 * 60e3), setInterval(() => live.sweep(), 60e3)];
   timers.forEach(t => t.unref());
   server.on('close', () => timers.forEach(clearInterval));
-  server.store = store; server.push = () => push(); return server;
+  server.store = store; server.live = live; server.push = () => push(); return server;
 }
 if (require.main === module) { const port = +process.env.PORT || 8080; createServer().listen(port, '0.0.0.0', () => console.log('RiderKit server on :' + port)); }
 module.exports = { createServer };
