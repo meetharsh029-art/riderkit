@@ -1,6 +1,6 @@
 'use strict';
 // RiderKit server: static app + group-ride API on one port. No dependencies.
-// Env: PORT (8080), TRUST_PROXY=1|0 (defaults to 1 when NODE_ENV=production; use X-Forwarded-For for rate limiting, only behind a trusted tunnel/proxy), GROUP_TTL_MS.
+// Env: PORT (8080), TRUST_PROXY=1|0 (defaults to 1 when NODE_ENV=production; use X-Forwarded-For for rate limiting, only behind a trusted tunnel/proxy).
 const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
 const ROOT = path.resolve(__dirname, '..');
@@ -8,10 +8,10 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const STATIC_BLOCK = /^\/(server|tests|capacitor|node_modules)(\/|$)|^\/store(\/(?!privacy-policy\.html$)|$)|^\/\.|\.md$/i;
 
 function createServer(opts = {}) {
-  const store = new GroupStore(opts.store || { ttlMs: +process.env.GROUP_TTL_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
+  const store = new GroupStore(opts.store || { emptyTtlMs: +process.env.GROUP_EMPTY_TTL_MS || undefined, abandonedTtlMs: +process.env.GROUP_ABANDONED_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
   const lim = new Limiter(opts.now);
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
-  const L = Object.assign({ global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3] }, opts.limits);
+  const L = Object.assign({ global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], lifecycle: [10, 60e3] }, opts.limits);
   const ipOf = req => (trust && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
   const json = (res, status, obj) => { const b = JSON.stringify(obj); res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(b); };
   const body = req => new Promise((ok, bad) => { let n = 0; const ch = [];
@@ -38,7 +38,7 @@ function createServer(opts = {}) {
       limit(lim.count('jf:' + ip, L.joinFail[1]) < L.joinFail[0], 'too many wrong codes, wait a few minutes');
       const b = await body(req); let r;
       try { r = store.join(code, b.rider); } catch (e) { if (e.status === 404) limit(lim.hit('jf:' + ip, ...L.joinFail), 'too many wrong codes, wait a few minutes'); throw e; }
-      return json(res, 200, { code: r.g.code, memberId: r.m.id, token: r.m.token, state: store.snapshot(r.g) });
+      if (r.rejoined) store.flushNow(r.g); return json(res, 200, { code: r.g.code, memberId: r.m.id, token: r.m.token, rejoined: !!r.rejoined, state: store.snapshot(r.g) });
     }
     const token = q.get('token') || '';
     if (act === 'events' && req.method === 'GET') {
@@ -54,7 +54,14 @@ function createServer(opts = {}) {
     const b = await body(req); const tk = b.token || token;
     if (act === 'location') { limit(lim.hit('l:' + tk, ...L.loc), 'too frequent'); store.location(code, tk, b); return json(res, 200, { ok: true }); }
     if (act === 'destination') { limit(lim.hit('d:' + tk, 10, 10e3)); b.lat === null ? store.clearDest(code, tk) : store.setDest(code, tk, b); return json(res, 200, { ok: true }); }
-    if (act === 'leave') { store.leave(code, tk); return json(res, 200, { ok: true }); }
+    if (act === 'alert' && parts[3] === 'cancel') { limit(lim.hit('ac:' + tk, ...L.alertCancel), 'too many cancels, slow down'); const r = store.cancelAlert(code, tk); store.flushNow(r.g); return json(res, 200, { ok: true, cancelled: r.had }); }
+    if (act === 'alert' && !parts[3]) { store.auth(code, tk); limit(lim.hit('a:' + tk, ...L.alert), 'too many alerts, wait a minute'); limit(lim.hit('ag:' + store.normCode(code), ...L.alertGroup), 'too many alerts in this group');
+      const g = store.raiseAlert(code, tk, b); store.flushNow(g); return json(res, 200, { ok: true }); }
+    if (act === 'leave') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const r = store.leave(code, tk); if (!r.closed) store.flushNow(r.g); return json(res, 200, { ok: true, closed: r.closed }); }
+    if (act === 'endtrip') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const r = store.endTrip(code, tk); if (!r.closed) store.flushNow(r.g); return json(res, 200, { ok: true, closed: r.closed ? 'finished' : null }); }
+    if (act === 'cancel') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); store.cancelGroup(code, tk); return json(res, 200, { ok: true, closed: 'cancelled' }); }
+    if (act === 'transfer') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const g = store.transferAdmin(code, tk, b.to); store.flushNow(g); return json(res, 200, { ok: true }); }
+    if (act === 'claim') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const g = store.claimAdmin(code, tk); store.flushNow(g); return json(res, 200, { ok: true }); }
     throw new HttpError(404, 'not found');
   }
 

@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>try{var t=localStorage.getItem("rk-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark")}catch(e){}</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#060a14">
+<meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>RiderKit</title>
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -47,9 +48,11 @@
 <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></symbol>
 <symbol id="i-fuel" viewBox="0 0 24 24"><path d="M5 20V5a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 15 5v15M4 20h12M5 9.5h10"/><path d="M15 8l3 2.500v6a1.500 1.500 0 0 0 3 0V9l-2.500-2.500"/></symbol>
 <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
 </defs></svg>
-<header><div class="brand"><svg class="ic lg"><use href="#i-bolt"/></svg><b>Rider<span>Kit</span></b></div><small id="net" role="status"></small></header>
+<header><div class="brand"><svg class="ic lg"><use href="#i-bolt"/></svg><b>Rider<span>Kit</span></b></div><div class="hdr-r"><small id="net" role="status"></small><button id="themeBtn" class="theme-btn" type="button" aria-label="Switch to dark theme" title="Light / dark theme"><svg class="ic"><use href="#i-moon"/></svg></button></div></header>
+<div id="alertBanner" hidden role="alert" aria-live="assertive"></div>
 <main id="main">
   <div id="docBanner" hidden></div>
   <section id="tab-home" class="tab active" aria-label="Home dashboard">
@@ -229,13 +232,14 @@
       <div class="glass card">
         <input id="gName" aria-label="Your rider name" placeholder="Your rider name" maxlength="24" autocomplete="nickname">
         <button id="gCreate" class="primary">Create a new group</button>
+        <button id="gRejoin" class="ghost" hidden></button>
         <div class="row"><input id="gCode" aria-label="Ride code e.g. RIDE-4821" placeholder="Ride code e.g. RIDE-4821" maxlength="12" autocapitalize="characters"><button id="gJoin" class="primary">Join</button></div>
-        <small class="hint">No account. Your live location is shared with everyone who has the code, only while you are in the group. The group (and your position) is deleted from the server after ~24 h idle or when everyone leaves. Keep this screen open: browsers pause GPS when the phone is locked.</small>
+        <small class="hint">No account. Your live location is shared with everyone who has the code, only while you are in the group. The group stays open as long as anyone is still on their trip. It closes when the admin cancels it or every rider has ended their trip, and your position is deleted from the server then. Keep this screen open: browsers pause GPS when the phone is locked.</small>
       </div>
     </div>
     <div id="gMsg" class="glass card warn" hidden></div>
     <div id="gBox" hidden>
-      <div class="glass card"><div class="item"><div>Group <b id="gCodeShow"></b><br><small id="gConn"></small></div><div class="acts"><button id="gShare" class="primary small">Share link</button><button id="gLeave" class="ghost small">Leave</button></div></div></div>
+      <div class="glass card"><div class="item"><div>Group <b id="gCodeShow"></b><br><small id="gConn"></small></div><div class="acts"><button id="gAlertBtn" class="danger small" type="button" aria-label="Breakdown or SOS alert"><svg class="ic"><use href="#i-sos"/></svg>Alert</button><button id="gAlertCancel" class="ghost small" type="button" hidden>Cancel alert</button><button id="gShare" class="primary small">Share link</button><button id="gLeave" class="ghost small">Leave</button></div></div></div>
       <div id="gAlert" class="glass card warn" hidden></div>
       <div id="gmap"></div>
       <div class="row"><button id="gPick" class="ghost small"><svg class="ic"><use href="#i-pin"/></svg>Pick destination on map</button><button id="gFit" class="ghost small">Fit everyone</button></div>
@@ -249,6 +253,10 @@
         <small class="hint">Routes: OSRM public demo server (car profile, best effort, ~1 request/s, not for heavy use). Places: Nominatim. © OpenStreetMap contributors.</small>
       </div>
       <h3>Riders</h3><div id="gRiders"></div>
+      <div class="glass card" id="gLife"><h3 style="margin-top:0">Trip controls</h3><div id="gRole" class="hint"></div>
+        <div class="acts"><button id="gEndTrip" class="ghost">End my trip</button><button id="gCancelGroup" class="danger" hidden>Cancel group for everyone</button><button id="gClaim" class="ghost" hidden>Take over as admin</button></div>
+        <small class="hint">End my trip: you stop sharing and your pin disappears; the group keeps going for riders still out, and you can rejoin with the code. The group closes when the admin cancels it or every rider has ended their trip. If the admin ends their trip or leaves, the next rider becomes admin.</small></div>
+      <small class="hint">Breakdown / SOS: tap Alert at the top, pick what happened, and every rider sees it with your location. Alerts only show while RiderKit is open on their screen &ndash; a web page cannot ring or vibrate on a locked phone. For real emergencies call 112.</small>
     </div>
   </section>
 
@@ -303,6 +311,7 @@
       <button class="primary">Save</button>
       <div id="setMsg" class="hint"></div>
     </form>
+    <div class="glass card" id="themeCard"><label class="switch tgl"><input type="checkbox" id="themeDark"><span class="knob" aria-hidden="true"></span><span><b>Dark theme</b><br><small>Light is the default. Your choice is remembered on this device.</small></span></label></div>
     <div class="glass card" id="backupCard">
       <h3><svg class="ic"><use href="#i-save"/></svg>Backup &amp; restore</h3>
       <small class="hint">One JSON file with all your rides (incl. photos), vehicles, service, tyres, documents, contacts, fuel log, stops and settings. Stored only on this device until you save the file somewhere. The file is not encrypted.</small>
@@ -331,6 +340,12 @@
 </div>
 
 <div id="detail" hidden></div>
+<div id="alertAsk" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="alertAskT">
+  <div class="glass sheetbox"><h3 id="alertAskT">What happened?</h3><p class="hint">Everyone in the group is alerted with your location. You can cancel it any time.</p>
+    <div id="alertKinds" class="chips2"></div>
+    <div id="alertAskErr" class="warn-txt" role="alert" hidden></div>
+    <div class="row"><button id="alertAskClose" class="ghost" type="button">Close</button></div></div>
+</div>
 <div id="stopAsk" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="stopAskT">
   <div class="glass sheetbox"><h3 id="stopAskT">What was this stop?</h3><p id="stopAskInfo" class="hint"></p>
     <div id="stopKinds" class="chips"></div>

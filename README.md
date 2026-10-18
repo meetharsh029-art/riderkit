@@ -33,3 +33,9 @@ UI redesigned (neon dashboard theme), Home dashboard is the default tab, vehicle
 
 ## v5 stage 1
 Weather (Open-Meteo, route rain alerts, destination forecast), fuel/mileage/₹-per-km log + "what was this stop?", full JSON backup/restore (SOS & settings tab), vehicle editing. Tests: `node tests/test.js`, `node tests/stage1.test.js`, `node tests/server.test.js`; with puppeteer-core + Chrome + internet: `tests/run-all.sh 3` (everything, 3 times).
+
+Theme: light by default, dark via the header button (`localStorage rk-theme`). `node tests/e2e.theme.js` audits contrast; `SHOTS=1` writes phone screenshots to `screenshots/`.
+
+
+### Group lifecycle
+Groups stay open while any rider is on their trip. They close when the admin cancels or all riders end their trip. See STATUS.md.

@@ -62,7 +62,8 @@ addEventListener('online', netUpd); addEventListener('offline', netUpd); netUpd(
 // ---------- map ----------
 const map = L.map('map', { zoomControl: false }).setView([20.5937, 78.9629], 5); // India
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
-const line = L.polyline([], { color: '#22e6ff', weight: 5, className: 'glow' }).addTo(map);
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const line = L.polyline([], { color: cssv('--m-line'), weight: 5, className: 'glow' }).addTo(map);
 let marker = null;
 
 // ---------- ride tracking ----------
@@ -89,7 +90,7 @@ function onFix(p) {
   ride.speed = sp; ride.maxSpeed = Math.max(ride.maxSpeed, sp);
   ride.points.push({ lat: fix.lat, lon: fix.lon, t: fix.t });
   line.addLatLng([fix.lat, fix.lon]);
-  if (!marker) marker = L.circleMarker([fix.lat, fix.lon], { radius: 8, color: '#fff', fillColor: '#ff9d2e', fillOpacity: 1 }).addTo(map);
+  if (!marker) marker = L.circleMarker([fix.lat, fix.lon], { radius: 8, color: '#fff', fillColor: cssv('--m-latest'), fillOpacity: 1 }).addTo(map);
   else marker.setLatLng([fix.lat, fix.lon]);
   map.setView([fix.lat, fix.lon], Math.max(map.getZoom(), 16));
   setStats();
@@ -140,7 +141,7 @@ async function openRide(id) {
   <div class="row"><button id="dSave" class="primary">Save notes</button><button id="dDel" class="danger">Delete ride</button></div>
   <button id="dGpx" class="ghost" style="margin-top:8px">Export GPX</button>`;
   const dm = L.map('dmap'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(dm);
-  if (r.points.length > 1) { const pl = L.polyline(r.points.map(p => [p.lat, p.lon]), { color: '#22e6ff', weight: 5, className: 'glow' }).addTo(dm); dm.fitBounds(pl.getBounds()); } else dm.setView([20.59, 78.96], 4);
+  if (r.points.length > 1) { const pl = L.polyline(r.points.map(p => [p.lat, p.lon]), { color: cssv('--m-line'), weight: 5, className: 'glow' }).addTo(dm); dm.fitBounds(pl.getBounds()); } else dm.setView([20.59, 78.96], 4);
   const drawPh = () => { urls.forEach(URL.revokeObjectURL); urls = [];
     $('dPhotos').innerHTML = ''; (r.photos || []).forEach((b, i) => { const u = URL.createObjectURL(b); urls.push(u); const im = new Image(); im.src = u; $('dPhotos').append(im); }); };
   drawPh();
@@ -325,19 +326,27 @@ function gInitMap() {
   G.map.on('click', e => { if (!G.pick) return; G.pick = false; $('gPick').classList.remove('primary'); setDest(e.latlng.lat, e.latlng.lng, 'Dropped pin ' + e.latlng.lat.toFixed(4) + ', ' + e.latlng.lng.toFixed(4)); });
 }
 function gStart(sess) {
-  gSave(sess); gMsg(''); gShow('gSetup', false); gShow('gBox', true); $('gCodeShow').textContent = sess.code;
+  gSave(sess); try { localStorage.setItem('rk-group-last', JSON.stringify({ code: sess.code, name: sess.name })); } catch {} gMsg(''); gShow('gSetup', false); gShow('gBox', true); $('gCodeShow').textContent = sess.code;
   gInitMap(); setTimeout(() => G.map.invalidateSize(), 50); G.fitted = false;
   gConnect(); clearInterval(G.poll); G.poll = setInterval(gPoll, 5000); clearInterval(G.send); G.send = setInterval(gSendLoc, 5000);
   if (navigator.geolocation && G.watch == null) G.watch = navigator.geolocation.watchPosition(p => { G.fix = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, speed: p.coords.speed, t: Date.now() };
     if (G.firstFix !== true) { G.firstFix = true; gSendLoc(); } maybeRoute(); }, e => gMsg('Location unavailable: ' + e.message + '. You can still see others.'), { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
   try { navigator.wakeLock?.request('screen').then(w => G.wake = w).catch(() => {}); } catch {}
 }
+const CLOSE_TXT = { cancelled: 'The admin cancelled the group.', finished: 'Every rider ended their trip, so the group is finished.' };
+function gForgetLast() { try { localStorage.removeItem('rk-group-last'); } catch {} gRejoinBtn(); }
+function gRejoinBtn() { let l = null; try { l = JSON.parse(localStorage.getItem('rk-group-last') || 'null'); } catch {} const b = $('gRejoin'); if (!b) return; b.hidden = !(l && l.code && l.name) || !!G.sess; if (!b.hidden) b.textContent = 'Rejoin ' + l.code + ' as ' + l.name; }
+function gGone(e) { // 403/404/410 from the server while in a group
+  if (e.status === 410) { gForgetLast(); gStop(e.message || 'This group has closed.'); }
+  else if (e.status === 403 || e.status === 404) gStop('That group has ended or you were removed. If it is still running, tap Rejoin or enter the code.');
+  else return false; return true; }
 function gStop(msg) {
+  seenAlerts.clear(); $('alertBanner').hidden = true; $('alertBanner').innerHTML = '';
   kvSet('activeRoute', null);
   gSave(null); G.es?.close(); G.es = null; clearInterval(G.poll); clearInterval(G.send);
   if (G.watch != null) navigator.geolocation.clearWatch(G.watch); G.watch = null; G.firstFix = false; try { G.wake?.release(); } catch {}
   Object.values(G.markers).forEach(m => m.remove()); G.markers = {}; G.destMk?.remove(); G.destMk = null; G.routeLine?.remove(); G.routeLine = null; G.route = null; G.routedFor = null; G.snap = null;
-  gShow('gBox', false); gShow('gSetup', true); gShow('gDest', false); gMsg(msg || '');
+  gShow('gBox', false); gShow('gSetup', true); gShow('gDest', false); gMsg(msg || ''); gRejoinBtn();
 }
 function gConnect() {
   G.es?.close(); const s = G.sess; if (!s || !window.EventSource) return;
@@ -348,19 +357,21 @@ function gConnect() {
 async function gPoll() { // fallback when SSE is silent (proxies that buffer / mobile networks); server only pushes on change
   const s = G.sess; if (!s) return; if (Date.now() - G.lastEvt < 12000 && G.es && G.es.readyState === 1) return;
   try { gApply(await gApi('GET', '/' + encodeURIComponent(s.code) + '?token=' + s.token)); $('gConn').textContent = 'Live (polling)'; }
-  catch (e) { if (e.status === 403 || e.status === 404) gStop('That group has ended or you were removed.'); else $('gConn').textContent = 'Offline – retrying'; }
+  catch (e) { if (!gGone(e)) $('gConn').textContent = 'Offline – retrying'; }
 }
 let lastSent = 0;
 async function gSendLoc() {
   const s = G.sess, f = G.fix; if (!s || !f || Date.now() - lastSent < 900) return; lastSent = Date.now();
   try { await gApi('POST', '/' + encodeURIComponent(s.code) + '/location', { token: s.token, lat: f.lat, lng: f.lng, acc: f.acc, speed: f.speed != null && f.speed >= 0 ? f.speed : undefined }); }
-  catch (e) { if (e.status === 403 || e.status === 404) gStop('That group has ended or you were removed.'); }
+  catch (e) { if (e.status === 409) { gStop('Your trip has ended. Tap Rejoin to continue.'); return; } gGone(e); }
 }
 function gApply(snap) {
-  G.snap = snap; G.offset = snap.now - Date.now(); renderGroup(); maybeRoute();
+  if (snap.closed) { gForgetLast(); gStop(CLOSE_TXT[snap.closed] || 'This group has closed.'); return; }
+  { const me = G.sess && snap.members.find(m => m.id === G.sess.memberId); if (me && me.ended) { gStop('Your trip has ended. Tap Rejoin to continue.'); return; } }
+  G.snap = snap; G.offset = snap.now - Date.now(); renderGroup(); maybeRoute(); renderAlerts(true);
 }
 function labelIcon(m, me, off) { return L.divIcon({ className: '', iconSize: [16, 16], iconAnchor: [8, 8],
-  html: `<div class="gdot${me ? ' me' : ''}${off ? ' off' : ''}" style="background:${esc(m.color)}"><span class="glabel">${esc(m.name)}</span></div>` }); }
+  html: `<div class="gdot${me ? ' me' : ''}${off ? ' off' : ''}${m.alert ? ' alert' : ''}" style="background:${esc(m.color)}">${m.alert ? '!' : ''}<span class="glabel">${esc(m.name)}${m.alert ? ' · ' + esc(C.alertLabel(m.alert.type)) : ''}</span></div>` }); }
 function renderGroup() {
   const snap = G.snap, s = G.sess; if (!snap || !s) return;
   const dest = snap.dest; const rows = C.groupFlags(snap.members, dest, gNow());
@@ -378,13 +389,42 @@ function renderGroup() {
   // alerts
   const al = []; rows.forEach(r => { if (r.stopped) al.push(`<b>${esc(r.name)}</b> has not moved for ${Math.floor((gNow() - r.movedAt) / 60000)} min`); if (r.behind) al.push(`<b>${esc(r.name)}</b> is far behind (${C.fmtDist(r.behindBy)} ${dest ? 'behind the leader' : 'from the group'})`); });
   $('gAlert').hidden = !al.length; $('gAlert').innerHTML = al.length ? ico('warn') + 'Regroup: ' + al.join(' · ') : '';
+  { const me = snap.members.find(m => m.id === s.memberId), adm = snap.members.find(m => m.isAdmin), amAdmin = !!(me && me.isAdmin);
+    $('gRole').textContent = amAdmin ? 'You are the group admin.' : (adm ? 'Group admin: ' + adm.name + '.' : 'No active admin.');
+    $('gCancelGroup').hidden = !amAdmin;
+    $('gClaim').hidden = amAdmin || !!(adm && !adm.ended && gNow() - adm.lastSeen < 600000); }
   // riders list
   const sorted = rows.slice().sort((a, b) => (a.distToDest ?? 1e12) - (b.distToDest ?? 1e12));
   $('gRiders').innerHTML = sorted.map(r => `<div class="glass card item" data-mid="${esc(r.id)}"><div><span class="cdot" style="background:${esc(r.color)}"></span><b>${esc(r.name)}</b>${r.id === s.memberId ? ' (you)' : ''}
-    ${r.stopped ? '<span class="tag stop">STOPPED</span>' : ''}${r.behind ? '<span class="tag far">FAR BEHIND</span>' : ''}${!r.online ? '<span class="tag off">OFFLINE?</span>' : ''}<br>
-    <small>${r.hasPos ? '' : 'no GPS fix yet · '}${dest && r.hasPos ? C.fmtDist(r.distToDest) + ' to destination (straight line) · ' : ''}seen ${esc(C.fmtAgo(gNow() - r.lastSeen))}${r.speed != null ? ' · ' + Math.round(r.speed * 3.6) + ' km/h' : ''}</small></div></div>`).join('');
+    ${r.isAdmin ? '<span class="tag admin">ADMIN</span>' : ''}${r.ended ? '<span class="tag off">TRIP ENDED</span>' : ''}${r.alert ? '<span class="tag alert">ALERT</span>' : ''}${r.stopped ? '<span class="tag stop">STOPPED</span>' : ''}${r.behind ? '<span class="tag far">FAR BEHIND</span>' : ''}${!r.online ? '<span class="tag off">OFFLINE?</span>' : ''}<br>
+    <small>${r.alert ? `<b class="due">${esc(C.alertLabel(r.alert.type))}</b> · ` : ''}${r.ended ? 'ended their trip · ' : r.hasPos ? '' : 'no GPS fix yet · '}${(snap.members.find(x => x.id === s.memberId) || {}).isAdmin && r.id !== s.memberId && !r.ended ? `<a href="#" class="mkadmin" data-mk="${esc(r.id)}">Make admin</a> · ` : ''}${dest && r.hasPos ? C.fmtDist(r.distToDest) + ' to destination (straight line) · ' : ''}seen ${esc(C.fmtAgo(gNow() - r.lastSeen))}${r.speed != null ? ' · ' + Math.round(r.speed * 3.6) + ' km/h' : ''}</small></div></div>`).join('');
+  $('gRiders').querySelectorAll('.mkadmin').forEach(el => el.onclick = async ev => { ev.preventDefault(); ev.stopPropagation(); const nm = (snap.members.find(x => x.id === el.dataset.mk) || {}).name; if (!confirm('Make ' + nm + ' the group admin? You will lose the power to cancel the group.')) return; try { await gLife('transfer', { to: el.dataset.mk }); } catch (e) { gMsg(e.message); } });
   $('gRiders').querySelectorAll('[data-mid]').forEach(el => el.onclick = () => { const m = G.markers[el.dataset.mid]; if (m) { G.map.setView(m.getLatLng(), Math.max(G.map.getZoom(), 15)); window.scrollTo({ top: $('gmap').offsetTop - 60, behavior: 'smooth' }); } });
 }
+// ---------- group breakdown / SOS alerts ----------
+const seenAlerts = new Set();
+function alertBeep() { try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 600]); } catch {} try { const A = window.AudioContext || window.webkitAudioContext; if (!A) return; const ac = new A(), o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = 880; o.connect(g); g.connect(ac.destination); g.gain.value = .15; o.start(); o.frequency.setValueAtTime(660, ac.currentTime + .25); o.stop(ac.currentTime + .6); setTimeout(() => ac.close(), 900); } catch {} }
+function renderAlerts(notify) {
+  const box = $('alertBanner'), s = G.sess; if (!s || !G.snap) { box.hidden = true; box.innerHTML = ''; $('gAlertCancel').hidden = true; return; }
+  const me = G.fix ? { lat: G.fix.lat, lon: G.fix.lng } : null; const rows = C.alertRows(G.snap.members, s.memberId, me);
+  if (notify) { const fresh = C.freshAlerts(rows, seenAlerts); if (fresh.length) { alertBeep(); window.__lastAlertBeep = Date.now(); } }
+  const mine = rows.find(r => r.mine); $('gAlertCancel').hidden = !mine; $('gAlertBtn').lastChild.textContent = mine ? 'Change' : 'Alert';
+  box.hidden = !rows.length;
+  box.innerHTML = rows.map(r => r.mine
+    ? `<div class="alert-card mine" data-aid="${esc(r.id)}"><b>${ico('warn')}Your alert is active: ${esc(r.label)}</b><small>Everyone in the group can see it${r.lat == null ? ' (no GPS fix yet, so no location was shared)' : ''}.</small><div class="row"><button type="button" data-achange>Change type</button><button type="button" data-acancel>Cancel my alert</button></div></div>`
+    : `<div class="alert-card" data-aid="${esc(r.id)}"><b>${ico('warn')}${esc(r.name)}: ${esc(r.label)}</b><small>${r.distM != null ? C.fmtDist(r.distM) + ' away (straight line)' : r.lat == null ? 'Location unknown' : 'Your GPS fix is not available yet, distance unknown'} · ${esc(C.fmtAgo(gNow() - r.at))}</small><div class="row">${r.lat != null ? `<a class="btn" data-anav target="_blank" rel="noopener" href="${esc(C.alertNavLink(r, me))}">Navigate to them</a><button type="button" data-ashow>Show on map</button>` : ''}</div></div>`).join('');
+  box.querySelectorAll('[data-acancel]').forEach(b => b.onclick = cancelMyAlert);
+  box.querySelectorAll('[data-achange]').forEach(b => b.onclick = () => $('gAlertBtn').click());
+  box.querySelectorAll('[data-ashow]').forEach(b => b.onclick = () => { const id = b.closest('[data-aid]').dataset.aid; showTab('group'); const m = G.markers[id]; if (m) setTimeout(() => { G.map.invalidateSize(); G.map.setView(m.getLatLng(), Math.max(G.map.getZoom(), 15)); window.scrollTo({ top: $('gmap').offsetTop - 60, behavior: 'smooth' }); }, 120); });
+}
+async function cancelMyAlert() { const s = G.sess; if (!s) return; try { await gApi('POST', '/' + encodeURIComponent(s.code) + '/alert/cancel', { token: s.token }); gMsg(''); } catch (e) { gMsg('Could not cancel the alert: ' + e.message); } }
+$('alertKinds').innerHTML = C.ALERT_TYPES.map(t => `<button type="button" class="${t === 'sos' ? 'sos' : 'ghost'}" data-at="${t}">${esc(C.alertLabel(t))}</button>`).join('');
+$('gAlertBtn').onclick = () => { $('alertAskErr').hidden = true; $('alertAsk').hidden = false; $('alertKinds').querySelector('button').focus(); };
+$('alertAskClose').onclick = () => { $('alertAsk').hidden = true; };
+$('alertKinds').onclick = async e => { const b = e.target.closest('[data-at]'); const s = G.sess; if (!b || !s) return;
+  try { await gApi('POST', '/' + encodeURIComponent(s.code) + '/alert', { token: s.token, type: b.dataset.at, lat: G.fix ? G.fix.lat : undefined, lng: G.fix ? G.fix.lng : undefined }); $('alertAsk').hidden = true; gMsg(''); }
+  catch (er) { $('alertAskErr').hidden = false; $('alertAskErr').textContent = 'Could not send the alert: ' + er.message + (er.status === 429 ? '' : '. If this is an emergency call 112.'); } };
+$('gAlertCancel').onclick = cancelMyAlert;
 function gFit() {
   const pts = Object.values(G.markers).map(m => m.getLatLng()); if (G.snap?.dest) pts.push(L.latLng(G.snap.dest.lat, G.snap.dest.lng));
   if (pts.length === 1) G.map.setView(pts[0], 15); else if (pts.length) G.map.fitBounds(L.latLngBounds(pts).pad(0.25));
@@ -404,7 +444,7 @@ async function maybeRoute(force) {
   try {
     const u = `https://router.project-osrm.org/route/v1/driving/${G.fix.lng.toFixed(6)},${G.fix.lat.toFixed(6)};${d.lng.toFixed(6)},${d.lat.toFixed(6)}?overview=full&geometries=geojson&steps=true`;
     const r = await fetch(u); const j = await r.json().catch(() => null); if (!r.ok && !j) throw new Error('routing service HTTP ' + r.status);
-    const rt = C.parseRoute(j); G.route = rt; saveActiveRoute(rt, d).catch(() => {}); G.routeLine?.remove(); G.routeLine = L.polyline(rt.line, { color: '#d946ef', weight: 5, opacity: .9, className: 'glow-am' }).addTo(G.map);
+    const rt = C.parseRoute(j); G.route = rt; saveActiveRoute(rt, d).catch(() => {}); G.routeLine?.remove(); G.routeLine = L.polyline(rt.line, { color: cssv('--m-route'), weight: 5, opacity: .9, className: 'glow-am' }).addTo(G.map);
     G.map.fitBounds(G.routeLine.getBounds().pad(0.15));
     $('gRouteInfo').innerHTML = `<b>${C.fmtDist(rt.distance)}</b> · about ${Math.max(1, Math.round(rt.duration / 60))} min by car <small>(estimate, not live traffic)</small>`;
     $('gSteps').innerHTML = rt.steps.map(st => `<li>${esc(st.text)} <small>${st.dist ? '· ' + esc(C.fmtDist(st.dist)) : ''}</small></li>`).join('');
@@ -430,17 +470,25 @@ async function gEnter(kind) {
     if (kind === 'create') r = await gApi('POST', '', { rider: name });
     else { const code = C.normCode($('gCode').value); if (!/^RIDE-\d{4}$/.test(code)) { gMsg('Code looks like RIDE-4821.'); return; } r = await gApi('POST', '/' + code + '/join', { rider: name }); }
     gStart({ code: r.code, token: r.token, memberId: r.memberId, name }); gApply(r.state);
-  } catch (e) { gMsg(e.status === 404 ? 'No group with that code (it may have expired).' : e.message); }
+  } catch (e) { gMsg(e.status === 404 ? 'No group with that code.' : e.message); }
 }
 $('gCreate').onclick = () => gEnter('create'); $('gJoin').onclick = () => gEnter('join');
 $('gShare').onclick = async () => { const url = location.origin + location.pathname + '?join=' + G.sess.code; const text = 'Join my ride on RiderKit: code ' + G.sess.code;
   try { if (navigator.share) await navigator.share({ title: 'RiderKit group ride', text, url }); else { await navigator.clipboard.writeText(url); gMsg('Link copied: ' + url); } } catch { gMsg('Share link: ' + url); } };
+async function gLife(act, body) { const s = G.sess; if (!s) return; const r = await gApi('POST', '/' + encodeURIComponent(s.code) + '/' + act, Object.assign({ token: s.token }, body || {})); if (r.state) gApply(r.state); return r; }
+$('gEndTrip').onclick = async () => { if (!G.sess || !confirm('End your trip? You stop sharing your location. The group keeps going for riders still out, and you can rejoin with the code.')) return;
+  try { const r = await gLife('endtrip'); if (r.closed) gForgetLast(); gStop(r.closed ? 'Your trip has ended. You were the last rider, so the group is finished.' : 'Your trip has ended. The group keeps going for the others. Tap Rejoin if you start again.'); } catch (e) { if (!gGone(e)) gMsg(e.message); } };
+$('gCancelGroup').onclick = async () => { if (!G.sess || !confirm('Cancel this group for everyone? All riders will be disconnected and the group is closed.')) return;
+  try { await gLife('cancel'); gForgetLast(); gStop('You cancelled the group for everyone.'); } catch (e) { if (!gGone(e)) gMsg(e.message); } };
+$('gClaim').onclick = async () => { try { await gLife('claim'); } catch (e) { gMsg(e.message); } };
+$('gRejoin').onclick = () => { let l = null; try { l = JSON.parse(localStorage.getItem('rk-group-last') || 'null'); } catch {} if (!l) return; $('gName').value = l.name; $('gCode').value = l.code; gEnter('join'); };
 $('gLeave').onclick = async () => { const s = G.sess; if (!s) return; try { await gApi('POST', '/' + encodeURIComponent(s.code) + '/leave', { token: s.token }); } catch {} gStop(''); };
 (async () => { // join-link autofill + resume session
   const st = (await kvGet('settings')) || {}; if (st.name) $('gName').value = st.name;
   const code = C.codeFromSearch(location.search); if (code) { $('gCode').value = code; showTab('group'); gMsg('Enter your name and tap Join to enter ' + code + '.'); }
   let sess; try { sess = JSON.parse(localStorage.getItem(GKEY) || 'null'); } catch {}
-  if (sess && sess.token && (!code || code === sess.code)) { try { const snap = await gApi('GET', '/' + encodeURIComponent(sess.code) + '?token=' + sess.token); gStart(sess); gApply(snap); } catch (e) { if (e.status === 403 || e.status === 404) gSave(null); } }
+  if (sess && sess.token && (!code || code === sess.code)) { try { const snap = await gApi('GET', '/' + encodeURIComponent(sess.code) + '?token=' + sess.token); gStart(sess); gApply(snap); } catch (e) { if (e.status === 410) { gSave(null); gForgetLast(); gMsg(e.message); } else if (e.status === 403 || e.status === 404) gSave(null); } }
+  gRejoinBtn();
 })();
 
 
@@ -459,7 +507,7 @@ function viewRoute(g) {
   <small class="hint">Viewing only - not saved to your ride log.</small>`;
   const dm = L.map('dmap'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(dm);
   const ll = g.points.map(p => [p.lat, p.lon]);
-  if (ll.length > 1) { const pl = L.polyline(ll, { color: '#22e6ff', weight: 5, className: 'glow' }).addTo(dm); dm.fitBounds(pl.getBounds()); } else dm.setView(ll[0], 14);
+  if (ll.length > 1) { const pl = L.polyline(ll, { color: cssv('--m-line'), weight: 5, className: 'glow' }).addTo(dm); dm.fitBounds(pl.getBounds()); } else dm.setView(ll[0], 14);
   L.circleMarker(ll[0], { radius: 7, color: '#fff', fillColor: '#3ee8a0', fillOpacity: 1 }).addTo(dm);
   $('dClose').onclick = () => { dm.remove(); d.hidden = true; };
 }
@@ -543,8 +591,8 @@ function drawHomeMap(rides) {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(HM); hmLayer = L.layerGroup().addTo(HM); window.__homeMap = HM; }
   hmLayer.clearLayers(); const all = []; const sorted = rides.slice().sort((a, b) => a.start - b.start);
   sorted.forEach((r, i) => { const ll = C.thin(r.points || [], 250).map(p => [p.lat, p.lon]); if (ll.length < 2) return; all.push(...ll); const latest = i === sorted.length - 1;
-    L.polyline(ll, { color: latest ? '#ff9d2e' : '#22e6ff', weight: 9, opacity: .16, interactive: false }).addTo(hmLayer);
-    L.polyline(ll, { color: latest ? '#ff9d2e' : '#22e6ff', weight: 2.6, opacity: .95, className: latest ? 'glow-am' : 'glow', interactive: false }).addTo(hmLayer); });
+    L.polyline(ll, { color: latest ? cssv('--m-latest') : cssv('--m-line'), weight: 9, opacity: .16, interactive: false }).addTo(hmLayer);
+    L.polyline(ll, { color: latest ? cssv('--m-latest') : cssv('--m-line'), weight: 2.6, opacity: .95, className: latest ? 'glow-am' : 'glow', interactive: false }).addTo(hmLayer); });
   $('homeMapEmpty').hidden = all.length > 0;
   if (all.length) HM.fitBounds(L.latLngBounds(all).pad(0.15), { maxZoom: 13 }); else HM.setView([20.5937, 78.9629], 4);
 }
@@ -776,7 +824,19 @@ $('bkFile').onchange = async e => { const f = e.target.files[0]; e.target.value 
   } catch (err) { $('bkMsg').textContent = 'Import failed: ' + err.message + ' Nothing was changed.'; } };
 { const m = sessionStorage.getItem('rk-bk-msg'); if (m) { sessionStorage.removeItem('rk-bk-msg'); $('bkMsg').textContent = m; } }
 
+// ---------- theme (light default / dark) ----------
+function applyTheme(t, persist) {
+  const dark = t === 'dark'; if (dark) document.documentElement.setAttribute('data-theme', 'dark'); else document.documentElement.removeAttribute('data-theme');
+  if (persist) try { localStorage.setItem('rk-theme', dark ? 'dark' : 'light'); } catch {}
+  const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = dark ? '#060a14' : '#ffffff';
+  $('themeBtn').setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); $('themeBtn').innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${dark ? 'sun' : 'moon'}"/></svg>`; $('themeDark').checked = dark;
+  line.setStyle({ color: cssv('--m-line') }); if (typeof G !== 'undefined' && G.routeLine) G.routeLine.setStyle({ color: cssv('--m-route') });
+  if (persist) { renderHome(); } 
+}
+$('themeBtn').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
+$('themeDark').onchange = e => applyTheme(e.target.checked ? 'dark' : 'light', true);
 // ---------- init ----------
+applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW failed', e));
 })();

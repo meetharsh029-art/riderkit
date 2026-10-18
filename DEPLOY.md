@@ -34,4 +34,4 @@ curl https://<service>.onrender.com/api/health   # {"ok":true,...}
 - Free services sleep after ~15 min idle; first request takes ~30–60 s to wake. Group rides are held in memory and are lost on restart/sleep.
 - `TRUST_PROXY` defaults to on when `NODE_ENV=production`; set `TRUST_PROXY=0` to disable. It makes rate limiting use `X-Forwarded-For`.
 - Privacy policy is served at `/store/privacy-policy.html`.
-- Env: `GROUP_TTL_MS` optional.
+- Env (optional): `GROUP_EMPTY_TTL_MS` (default 7 days: memory cleanup of groups with zero members), `GROUP_ABANDONED_MS` (default off: drop groups whose members are all unseen that long). Groups never expire while a rider is still on their trip; they close when the admin cancels or every rider ends their trip.

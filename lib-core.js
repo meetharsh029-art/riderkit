@@ -467,6 +467,20 @@
     const fuel = d && d.kv && Array.isArray(d.kv.fuel) ? d.kv.fuel.length : 0;
     return { ok: !errors.length, errors, counts: errors.length ? null : { rides: d.rides.length, maint: d.maint.length, fuel, vehicles: Array.isArray(d.kv.vehicles) ? d.kv.vehicles.length : 0, photos: d.rides.reduce((s, r) => s + (Array.isArray(r.photos) ? r.photos.length : 0), 0) } };
   }
-  const api = { VEHICLE_TYPES, FUELS, suggestSchedule, normalizeVehicle, editVehicle, vehicleName, vehicleOdo, nextDue, markDone, scheduleItems, monthsToDays, daysToMonths, rideStats, gridCells, cellOf, thin, nextService, tyreStatus, TYRE_GUIDE, demoData, CELL_DEG, groupFlags, fmtAgo, fmtDist, normCode, codeFromSearch, gmapsLink, stepText, parseRoute, DOC_TYPES, docStatus, docAlerts, dayNum, toGPX, parseGPX, DEFAULT_CONTACTS, telLink, shareLocationLinks, haversine, totalDistance, acceptFix, kmh, fmtDuration, fmtKm, fmtINR, CrashDetector, alertLinks, maintStatus, wmoInfo, sampleRoute, sampleCount, wxRouteUrl, wxDestUrl, parseOpenMeteo, rainAlerts, routeWeatherSummary, wxKey, wxFresh, fmtWxAge, validateFuel, normalizeFuel, fuelStats, detectStops, STOP_KINDS, buildBackup, validateBackup, BACKUP_KV_SKIP };
+  // ---------- group breakdown / SOS alerts ----------
+  const ALERT_TYPES = ['bike', 'car', 'puncture', 'accident', 'sos'];
+  const ALERT_LABEL = { bike: 'Bike breakdown', car: 'Car breakdown', puncture: 'Puncture', accident: 'Accident', sos: 'SOS - needs help' };
+  const alertLabel = t => ALERT_LABEL[t] || 'Alert';
+  // Active alerts from a group snapshot's members. Others first by newest; each has distance from `me` ({lat,lon}) when both positions are known.
+  function alertRows(members, myId, me) {
+    return (members || []).filter(m => m && m.alert && ALERT_TYPES.includes(m.alert.type)).map(m => { const a = m.alert, has = a.lat != null && a.lng != null;
+      return { id: m.id, name: m.name, type: a.type, label: alertLabel(a.type), at: a.at, lat: has ? a.lat : null, lng: has ? a.lng : null, mine: m.id === myId, color: m.color,
+        distM: has && me && isFinite(me.lat) && isFinite(me.lon) ? haversine(me, { lat: a.lat, lon: a.lng }) : null }; })
+      .sort((x, y) => (x.mine - y.mine) || (y.at - x.at));
+  }
+  // Which alerts in `rows` are new since `seen` (a Set of 'id@at' keys)? Returns the new rows (not mine) and updates the set.
+  function freshAlerts(rows, seen) { const out = []; const keys = new Set(); rows.forEach(r => { const k = r.id + '@' + r.at; keys.add(k); if (!seen.has(k) && !r.mine) out.push(r); }); seen.clear(); keys.forEach(k => seen.add(k)); return out; }
+  const alertNavLink = (a, origin) => a && a.lat != null ? gmapsLink({ lat: a.lat, lng: a.lng }, origin) : null;
+  const api = { VEHICLE_TYPES, FUELS, suggestSchedule, normalizeVehicle, editVehicle, vehicleName, vehicleOdo, nextDue, markDone, scheduleItems, monthsToDays, daysToMonths, rideStats, gridCells, cellOf, thin, nextService, tyreStatus, TYRE_GUIDE, demoData, CELL_DEG, groupFlags, fmtAgo, fmtDist, normCode, codeFromSearch, gmapsLink, stepText, parseRoute, DOC_TYPES, docStatus, docAlerts, dayNum, toGPX, parseGPX, DEFAULT_CONTACTS, telLink, shareLocationLinks, haversine, totalDistance, acceptFix, kmh, fmtDuration, fmtKm, fmtINR, CrashDetector, alertLinks, maintStatus, wmoInfo, sampleRoute, sampleCount, wxRouteUrl, wxDestUrl, parseOpenMeteo, rainAlerts, routeWeatherSummary, wxKey, wxFresh, fmtWxAge, validateFuel, normalizeFuel, fuelStats, detectStops, STOP_KINDS, buildBackup, validateBackup, BACKUP_KV_SKIP, ALERT_TYPES, ALERT_LABEL, alertLabel, alertRows, freshAlerts, alertNavLink };
   if (typeof module !== 'undefined') module.exports = api; else root.Core = api;
 })(typeof self !== 'undefined' ? self : this);
