@@ -86,6 +86,16 @@
   }
   const navKeyOf = route => route ? Math.round(route.distance) + ':' + route.line.length : '';
 
-  const api = { hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
+  // ===== Stage 5: map tile cache policy (OSM Tile Usage Policy: no prefetch, no bulk, no "save area"; cache what the user VIEWED, honour cache headers / >= 7 days) =====
+  const TILE = { max: 600, minTtlMs: 7 * 864e5, maxTtlMs: 30 * 864e5 };
+  const parseMaxAge = cc => { const m = /(?:^|[\s,])max-age=(\d+)/i.exec(String(cc || '')); return m ? +m[1] * 1000 : null; };
+  // ttl for a freshly fetched tile: server's max-age if it sent one, else 7 days; never below 1 day for sanity, never above 30 days
+  const tileTtl = cc => { const a = parseMaxAge(cc); return a === null ? TILE.minTtlMs : Math.max(864e5, Math.min(TILE.maxTtlMs, a)); };
+  const tileFresh = (meta, now) => !!meta && now < meta.f + meta.ttl;
+  // index = {url: {f: fetchedAt, ttl}}; returns urls to delete so at most `max` remain (oldest fetched first)
+  function tileEvict(index, max) { const ks = Object.keys(index || {}); if (ks.length <= (max || TILE.max)) return []; ks.sort((a, b) => index[a].f - index[b].f); return ks.slice(0, ks.length - (max || TILE.max)); }
+  const isTileUrl = u => /^https:\/\/tile\.openstreetmap\.org\/\d{1,2}\/\d+\/\d+\.png$/.test(u);
+
+  const api = { TILE, parseMaxAge, tileTtl, tileFresh, tileEvict, isTileUrl, hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
   if (typeof module !== 'undefined') module.exports = api; else root.Extra = api;
 })(typeof self !== 'undefined' ? self : this);

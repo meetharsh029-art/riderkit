@@ -150,5 +150,11 @@ $('liveStop').onclick = async () => { const s = LV.sess; if (!s) return; try { a
 $('liveCopy').onclick = async () => { try { await navigator.clipboard.writeText($('liveLink').value); $('liveMsg').textContent = 'Link copied.'; } catch { $('liveLink').select(); $('liveMsg').textContent = 'Press and hold the link to copy it.'; } };
 $('liveShare').onclick = async () => { const url = $('liveLink').value, text = 'Follow my ride live (read-only link, expires): ' + url; try { if (navigator.share) await navigator.share({ title: 'RiderKit live location', text, url }); else { window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener'); } } catch {} };
 window.__rkLive = LV; setTimeout(lvResume, 800);
+
+// ===== Stage 5: map tile cache (viewed tiles only; see sw.js + lib-extra TILE policy) =====
+async function mcRender() { const el = $('mcStatus'); if (!el) return; if (!('caches' in window)) { el.textContent = 'Map caching is not available in this browser.'; return; }
+  try { const n = (await caches.has('riderkit-tiles')) ? (await (await caches.open('riderkit-tiles')).keys()).length : 0; el.textContent = n ? n + ' map tile' + (n === 1 ? '' : 's') + ' saved from places you viewed (about ' + Math.max(1, Math.round(n * 15 / 1024 * 10) / 10) + ' MB, limit 600 tiles).' : 'No map tiles saved yet. They are saved as you view the map.'; } catch { el.textContent = 'Could not read the map cache.'; } }
+$('mcClear').onclick = async () => { if (!confirm('Delete saved map tiles? Maps will reload from the internet when you view them.')) return; try { await caches.delete('riderkit-tiles'); await caches.delete('riderkit-tiles-meta'); } catch {} mcRender(); toast('Saved map tiles deleted. Reload to refresh the service worker index.'); };
+window.__rkOnTab.push(name => { if (name === 'me') mcRender(); }); window.__rkMapCache = mcRender;
 //__STAGES__
 })();

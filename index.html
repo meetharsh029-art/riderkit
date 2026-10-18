@@ -359,6 +359,8 @@
       <button class="primary">Save</button>
       <div id="setMsg" class="hint"></div>
     </form>
+    <div class="glass card" id="mapCacheCard"><h3>Map cache</h3><p id="mcStatus" role="status">Checking...</p><button id="mcClear" class="small">Clear saved map tiles</button>
+      <small class="hint">RiderKit remembers only the map tiles you have actually looked at (up to 600, honouring the tile server's cache time, at least a few days) so places you revisit open faster and still show without signal. It does <b>not</b> download maps ahead of time: OpenStreetMap's free tile servers forbid bulk download and "save area for offline" features. For a route you want offline, open the route overview on the map before you leave while you have signal. <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Report a map issue</a>.</small></div>
     <div class="glass card" id="themeCard"><label class="switch tgl"><input type="checkbox" id="themeDark"><span class="knob" aria-hidden="true"></span><span><b>Dark theme</b><br><small>Light is the default. Your choice is remembered on this device.</small></span></label></div>
     <div class="glass card" id="acctCard"><h3 style="margin-top:0">Account (optional)</h3>
       <p class="hint">You can use RiderKit fully as a guest. An account only adds sign-in on this and other devices. <a href="terms.html" target="_blank" rel="noopener">Terms</a> · <a href="store/privacy-policy.html" target="_blank" rel="noopener">Privacy</a> · <a href="delete-account.html" target="_blank" rel="noopener">Delete account</a></p>
