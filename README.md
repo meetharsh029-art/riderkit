@@ -54,3 +54,14 @@ Tests: `node tests/messages.test.js` (multi-client server) and `node tests/e2e.m
 
 ### Accounts (optional)
 Email sign-up with emailed code, login, reset, delete; phone OTP behind a disabled provider; swappable storage (file / Postgres). See ACCOUNTS.md for setup and the exact owner steps. Tests: `node tests/auth.test.js`, `node tests/kv.test.js`, `node tests/e2e.account.js`.
+
+
+## v6 (stages 1-7, SW v12-v18)
+- **Reminders**: Web Push (VAPID, implemented with `node:crypto`, no dependency) + local-notification fallback for document expiry, dated service items, tyre age/pressure. `server/push.js`.
+- **Hazard & place pins**: `server/pins.js`, More -> Hazards & places. Voting, expiry, rate limits, reports, `ADMIN_TOKEN` moderation.
+- **Navigation**: off-route detection, auto re-route, spoken turn prompts (Web Speech `speechSynthesis`) for the group-ride route. Pure logic in `lib-extra.js`.
+- **Live-share link**: Ride tab -> Share live location; read-only viewer `live.html`; `server/live.js` (memory only, expires).
+- **Map cache**: only tiles you viewed (OSM policy forbids prefetch/offline download); `sw.js`, SOS & settings -> Map cache.
+- **Group expenses + stops**: `server/trip.js`; calculation only.
+- **Recap card**: History -> ride -> Share recap card (canvas PNG).
+- Tests: `tests/run-all.sh N` runs everything N times (needs puppeteer-core in `NODE_PATH`, Chrome, internet for live OSRM/Open-Meteo/Nominatim suites, openssl for e2e.tiles). New suites: `push.test.js`, `extra.test.js`, `pins.test.js`, `live.test.js`, `trip.test.js`, `e2e.push.js`, `e2e.pins.js`, `e2e.nav.js`, `e2e.live.js`, `e2e.tiles.js`, `e2e.trip.js`, `e2e.recap.js`.

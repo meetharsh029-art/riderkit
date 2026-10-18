@@ -43,3 +43,17 @@ curl https://<service>.onrender.com/api/health   # {"ok":true,...}
 - Read them: set the `ADMIN_TOKEN` env var in Render (long random string; render.yaml declares it with `sync: false`), then
   `curl -H "Authorization: Bearer $ADMIN_TOKEN" https://riderkit.onrender.com/api/feedback` (optional `?limit=N`, newest first). Without ADMIN_TOKEN the endpoint returns 404 for GET.
 - Collected: type, message, optional contact, app version, user-agent, platform, language, screen size, standalone/online flags. No location, no IP stored.
+
+
+## Stage 1-7 features and what they need (SW v12-v18)
+| Feature | Server needs | Persistence |
+|---|---|---|
+| Web Push reminders | nothing (VAPID key pair auto-generated; optional `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`) | subscriptions + reminder dates in the KV store (JSON file = lost on Render free restart; `DATABASE_URL` = kept) |
+| Hazard / place pins | nothing; optional `ADMIN_TOKEN` for moderation | KV store (same as above) |
+| Live-share link (`/live.html#id`) | nothing | memory only |
+| Group expenses + stops | nothing | memory only (with the group) |
+| Auto re-route / voice prompts / recap card / tile cache | nothing (client side) | on device |
+
+- **Reminders and sleeping servers:** Render free sleeps after ~15 min idle, and a sleeping server cannot send scheduled pushes (the sweep runs every 30 min while awake, only 08:00-21:00 in the rider's time zone). The app therefore also shows due reminders as local notifications whenever it is opened. For dependable push, use a paid always-on instance or an external uptime pinger (user decision; not set up).
+- **Moderation of pins:** with `ADMIN_TOKEN` set: `curl -H "Authorization: Bearer $ADMIN_TOKEN" https://riderkit.onrender.com/api/pins/admin` lists reported pins; `curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' -d '{"id":"PINID","act":"remove"}' .../api/pins/admin` (or `"restore"`). Pins with 3 reports are hidden automatically.
+- **Postgres:** `DATABASE_URL` (Neon/Supabase free) makes accounts, push subscriptions and pins survive restarts. Not set up; needs the user.

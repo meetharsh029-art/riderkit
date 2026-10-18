@@ -20,6 +20,8 @@ async function collectReminders() {
 }
 async function pushSubState() { try { const reg = await navigator.serviceWorker.ready; return await reg.pushManager.getSubscription(); } catch { return null; } }
 async function syncReminders(sub) { sub = sub || await pushSubState(); if (!sub) return false;
+  try { const { key } = await jfetch('GET', '/api/push/key'); const want = X.urlB64ToBytes(key), cur = new Uint8Array((sub.options && sub.options.applicationServerKey) || []); // server VAPID key changed (e.g. server restarted without a saved key): re-subscribe
+    if (cur.length !== want.length || cur.some((v, i) => v !== want[i])) { const reg = await navigator.serviceWorker.ready; try { await sub.unsubscribe(); } catch {} sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: want }); } } catch {}
   try { await jfetch('POST', '/api/push/sync', { subscription: sub.toJSON(), tz: -new Date().getTimezoneOffset(), reminders: await collectReminders() }); return true; } catch { return false; } }
 async function localNotify() { // fallback + belt and braces: when the app is opened, show due reminders (once per stage) as system notifications if permitted
   if (!('Notification' in window) || Notification.permission !== 'granted') return;

@@ -22,3 +22,9 @@ services:
         sync: false
       - key: DATABASE_URL     # accounts storage: Neon/Supabase Postgres URL. Unset = JSON file (LOST on every Render free restart/redeploy)
         sync: false
+      - key: VAPID_PUBLIC_KEY   # optional: Web Push reminders. Unset = a key pair is generated and stored in the KV store (JSON file lost on restart unless DATABASE_URL is set; clients re-subscribe automatically)
+        sync: false
+      - key: VAPID_PRIVATE_KEY  # keep secret (base64url P-256 private scalar). Generate: node -e "const c=require('crypto');const k=c.generateKeyPairSync('ec',{namedCurve:'prime256v1'});const p=k.publicKey.export({format:'jwk'}),s=k.privateKey.export({format:'jwk'});console.log(Buffer.concat([Buffer.from([4]),Buffer.from(p.x,'base64url'),Buffer.from(p.y,'base64url')]).toString('base64url'),s.d)"
+        sync: false
+      - key: VAPID_SUBJECT      # optional contact URL/mailto for push services (default https://riderkit.onrender.com)
+        sync: false

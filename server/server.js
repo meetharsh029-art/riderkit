@@ -185,7 +185,7 @@ function createServer(opts = {}) {
     if (url.pathname.startsWith('/api/')) { // CORS for the Capacitor app (no cookies/credentials used, so an origin allow-list is enough)
       const o = req.headers.origin;
       if (o && CORS_ORIGINS.has(o)) { res.setHeader('access-control-allow-origin', o); res.setHeader('vary', 'Origin'); }
-      if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400' }); return res.end(); }
+      if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization, x-device-id', 'access-control-max-age': '86400' }); return res.end(); }
     }
     try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveStatic(req, res, url); }
     catch (e) { if (res.headersSent) return res.end(); const s = e.status || 500; if (s === 500) console.error(e); json(res, s, { error: s === 500 ? 'server error' : e.message }); }
