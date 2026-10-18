@@ -53,6 +53,7 @@
 </defs></svg>
 <header><div class="brand"><svg class="ic lg"><use href="#i-bolt"/></svg><b>Rider<span>Kit</span></b></div><div class="hdr-r"><small id="net" role="status"></small><button id="themeBtn" class="theme-btn" type="button" aria-label="Switch to dark theme" title="Light / dark theme"><svg class="ic"><use href="#i-moon"/></svg></button></div></header>
 <div id="alertBanner" hidden role="alert" aria-live="assertive"></div>
+<div id="msgToast" hidden role="status" aria-live="polite"></div>
 <main id="main">
   <div id="docBanner" hidden></div>
   <section id="tab-home" class="tab active" aria-label="Home dashboard">
@@ -259,6 +260,14 @@
       <div id="gAlert" class="glass card warn" hidden></div>
       <div id="gmap"></div>
       <div class="row"><button id="gPick" class="ghost small"><svg class="ic"><use href="#i-pin"/></svg>Pick destination on map</button><button id="gFit" class="ghost small">Fit everyone</button></div>
+      <div class="glass card" id="gTalk"><h3 style="margin-top:0">Talk to the group</h3>
+        <div id="qmKinds" class="qm-grid"></div>
+        <div class="row"><button id="gPtt" class="ptt" type="button" aria-label="Hold to talk to the group">Hold to talk</button></div>
+        <div id="pttStatus" class="hint" role="status" aria-live="polite"></div>
+        <div class="row"><label class="chk"><input type="checkbox" id="optSound" checked> Beep / vibrate on messages</label><label class="chk"><input type="checkbox" id="optAuto" checked> Auto-play voice</label></div>
+        <h3>Messages</h3><div id="gMsgLog" class="msglog" aria-live="off"><small class="hint">No messages yet.</small></div>
+        <small class="hint">Messages and voice clips only reach riders who have RiderKit open on screen. Voice clips (max 15 s) are held in server memory for a few minutes and then deleted. This is not a replacement for a helmet intercom.</small>
+      </div>
       <form id="gSearchForm" class="row"><input id="gQ" aria-label="Search a place (Nominatim)" placeholder="Search a place (Nominatim)" maxlength="100"><button class="primary small">Search</button></form>
       <div id="gResults"></div>
       <div id="gDest" class="glass card" hidden>

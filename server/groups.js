@@ -6,6 +6,9 @@ const ALERT_TYPES = ['bike', 'car', 'puncture', 'accident', 'sos'];
 // Lifecycle: a group is NEVER expired while it has members who have not ended their trip. It closes only when the admin cancels it or every present rider has ended their trip.
 // Cleanup (memory only): a group with zero members and no activity for emptyTtlMs (7 days) is dropped. abandonedTtlMs (0 = off) optionally drops groups whose members have all been unseen that long.
 const OPTS = { alertTtlMs: 6 * 3600e3, emptyTtlMs: 7 * 24 * 3600e3, abandonedTtlMs: 0, reclaimStaleMs: 5 * 60e3, adminStaleMs: 10 * 60e3, tombstoneMs: 3600e3, maxGroups: 1000, maxMembers: 30, moveMeters: 25 };
+const QUICK = { stop: 'Stop', fuel: 'Fuel', tea: 'Tea break', slow: 'Slow down', wait: 'Wait for me', turn: 'Turn ahead', help: 'Need help' };
+// Voice clips: raw audio bytes held in server memory ONLY (never written to disk), expire after clipTtlMs, capped per group by count and bytes.
+const VOICE = { clipTtlMs: 3 * 60e3, maxClipBytes: 96 * 1024, maxClipsPerGroup: 8, maxBytesPerGroup: 512 * 1024, maxClipMs: 16000, logMax: 50 };
 const CLOSE_MSG = { cancelled: 'The admin cancelled the group.', finished: 'Every rider has ended their trip, so the group is finished.' };
 
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
@@ -17,7 +20,7 @@ const num = (v, lo, hi) => { const n = typeof v === 'number' ? v : NaN; if (!Num
 const optNum = (v, lo, hi) => (v == null ? null : (Number.isFinite(v) && v >= lo && v <= hi ? v : null));
 
 class GroupStore {
-  constructor(opts = {}, now = () => Date.now()) { this.o = Object.assign({}, OPTS, Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined))); this.now = now; this.groups = new Map(); this.listeners = new Map(); this.tombs = new Map(); }
+  constructor(opts = {}, now = () => Date.now()) { this.o = Object.assign({}, OPTS, VOICE, Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined))); this.now = now; this.groups = new Map(); this.listeners = new Map(); this.msgListeners = new Map(); this.tombs = new Map(); }
   newCode() { for (let i = 0; i < 50; i++) { const c = 'RIDE-' + (1000 + crypto.randomInt(9000)); if (!this.groups.has(c) && !this.tombs.has(c)) return c; } throw new HttpError(503, 'no free codes, try later'); }
   normCode(c) { c = String(c ?? '').toUpperCase().replace(/\s/g, ''); if (/^\d{4}$/.test(c)) c = 'RIDE-' + c; return c.replace(/^RIDE(\d{4})$/, 'RIDE-$1'); }
   get(code) { const c = this.normCode(code), g = this.groups.get(c); if (g) return g;
@@ -92,6 +95,27 @@ class GroupStore {
   // Take over admin when the admin is gone (ended their trip, removed, or unseen for adminStaleMs).
   claimAdmin(code, token) { const { g, m } = this.auth(code, token); if (m.ended) throw new HttpError(409, 'trip ended'); const a = g.members.get(g.adminId);
     if (a && a.id === m.id) return g; if (a && !a.ended && this.now() - a.lastSeen <= this.o.adminStaleMs) throw new HttpError(409, 'the admin is still active'); g.adminId = m.id; this.touch(g); return g; }
+  // ---- group messages (quick messages + voice clips). Relayed over SSE as 'msg' events; not part of the state snapshot.
+  pushMsg(g, msg) { (g.log || (g.log = [])).push(msg); if (g.log.length > this.o.logMax) g.log.shift(); this.touch(g); for (const f of this.msgListeners.get(g.code) || []) f(msg); return msg; }
+  say(code, token, type) {
+    const { g, m } = this.auth(code, token); if (m.ended) throw new HttpError(409, 'trip ended'); type = String(type ?? '');
+    if (!Object.prototype.hasOwnProperty.call(QUICK, type)) throw new HttpError(400, 'invalid message type');
+    m.lastSeen = this.now(); return this.pushMsg(g, { id: crypto.randomBytes(5).toString('hex'), kind: 'quick', type, text: QUICK[type], from: m.name, fromId: m.id, at: this.now() });
+  }
+  purgeClips(g) { if (!g.clips) return; const t = this.now(); for (const [id, c] of g.clips) if (t - c.at > this.o.clipTtlMs) g.clips.delete(id); }
+  addClip(code, token, buf, mime, durMs) {
+    const { g, m } = this.auth(code, token); if (m.ended) throw new HttpError(409, 'trip ended');
+    if (!buf || !buf.length) throw new HttpError(400, 'empty clip'); if (buf.length > this.o.maxClipBytes) throw new HttpError(413, 'clip too large');
+    if (!g.clips) g.clips = new Map(); this.purgeClips(g);
+    let bytes = 0; for (const c of g.clips.values()) bytes += c.buf.length;
+    if (g.clips.size >= this.o.maxClipsPerGroup || bytes + buf.length > this.o.maxBytesPerGroup) throw new HttpError(429, 'too many voice clips in this group right now, try again in a minute');
+    const id = crypto.randomBytes(8).toString('hex'); const dur = Math.max(0, Math.min(this.o.maxClipMs, Math.round(Number(durMs) || 0)));
+    g.clips.set(id, { buf, mime, at: this.now(), fromId: m.id }); m.lastSeen = this.now();
+    return this.pushMsg(g, { id, kind: 'voice', clipId: id, mime, size: buf.length, dur, from: m.name, fromId: m.id, at: this.now(), expiresAt: this.now() + this.o.clipTtlMs });
+  }
+  getClip(code, token, id) { const { g } = this.auth(code, token); this.purgeClips(g); const c = g.clips && g.clips.get(String(id)); if (!c) throw new HttpError(404, 'clip expired or not found'); return c; }
+  recentLog(g) { this.purgeClips(g); return (g.log || []).slice(-20).map(x => x.kind === 'voice' && !(g.clips && g.clips.has(x.clipId)) ? Object.assign({}, x, { expired: true }) : x); }
+  subscribeMsg(code, f) { let s = this.msgListeners.get(code); if (!s) this.msgListeners.set(code, s = new Set()); s.add(f); return () => s.delete(f); }
   snapshot(g) {
     const t = this.now();
     return { code: g.code, now: t, dest: g.dest, adminId: g.adminId, members: [...g.members.values()].map(m => ({ id: m.id, name: m.name, color: m.color, isAdmin: m.id === g.adminId, ended: !!m.ended, lat: m.ended ? null : (m.pos?.lat ?? null), lng: m.ended ? null : (m.pos?.lng ?? null), acc: m.acc, speed: m.speed, lastSeen: m.lastSeen, posAt: m.posAt ?? null, movedAt: m.movedAt, alert: this.alertOf(m) })) };
@@ -100,9 +124,10 @@ class GroupStore {
     for (const [c, g] of this.groups) { const empty = g.members.size === 0 && t - g.lastActivity > this.o.emptyTtlMs;
       const abandoned = this.o.abandonedTtlMs > 0 && g.members.size > 0 && [...g.members.values()].every(m => t - m.lastSeen > this.o.abandonedTtlMs);
       if (empty || abandoned) { this.groups.delete(c); n++; this.closeAll(c); } }
+    for (const g of this.groups.values()) this.purgeClips(g);
     for (const [c, tb] of this.tombs) if (t - tb.at > this.o.tombstoneMs) this.tombs.delete(c);
     return n; }
-  closeAll(code) { for (const f of this.listeners.get(code) || []) f(null); this.listeners.delete(code); }
+  closeAll(code) { this.msgListeners.delete(code); for (const f of this.listeners.get(code) || []) f(null); this.listeners.delete(code); }
   subscribe(code, f) { let s = this.listeners.get(code); if (!s) this.listeners.set(code, s = new Set()); s.add(f); return () => s.delete(f); }
   flush() { for (const g of this.groups.values()) if (g.dirty) { g.dirty = false; const snap = this.snapshot(g); for (const f of this.listeners.get(g.code) || []) f(snap); } }
 }
@@ -114,4 +139,4 @@ class Limiter {
   count(key, windowMs) { const t = this.now(); return (this.h.get(key) || []).filter(x => t - x < windowMs).length; }
   gc(maxAge = 3600e3) { const t = this.now(); for (const [k, a] of this.h) if (!a.length || t - a[a.length - 1] > maxAge) this.h.delete(k); }
 }
-module.exports = { ALERT_TYPES, GroupStore, Limiter, HttpError, dist, COLORS };
+module.exports = { QUICK, VOICE, ALERT_TYPES, GroupStore, Limiter, HttpError, dist, COLORS };

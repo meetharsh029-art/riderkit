@@ -13,11 +13,14 @@ function createServer(opts = {}) {
   const store = new GroupStore(opts.store || { emptyTtlMs: +process.env.GROUP_EMPTY_TTL_MS || undefined, abandonedTtlMs: +process.env.GROUP_ABANDONED_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
   const lim = new Limiter(opts.now);
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
-  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], lifecycle: [10, 60e3] }, opts.limits);
+  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3] }, opts.limits);
   const fb = new FeedbackStore(opts.feedbackFile, opts.feedbackMaxBytes);
   const adminToken = () => opts.adminToken !== undefined ? opts.adminToken : process.env.ADMIN_TOKEN || '';
   const ipOf = req => (trust && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
   const json = (res, status, obj) => { const b = JSON.stringify(obj); res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(b); };
+  const rawBody = (req, max) => new Promise((ok, bad) => { const cl = +req.headers['content-length']; if (cl > max) { req.resume(); return bad(new HttpError(413, 'clip too large')); }
+    let n = 0; const ch = []; req.on('data', c => { n += c.length; if (n <= max) ch.push(c); }); req.on('end', () => n > max ? bad(new HttpError(413, 'clip too large')) : ok(Buffer.concat(ch))); req.on('error', bad); });
+  const AUDIO_RE = /^audio\/(webm|ogg|mp4|mpeg|aac|x-m4a)(;.*)?$/i;
   const body = (req, max = 4096) => new Promise((ok, bad) => { let n = 0; const ch = [];
     req.on('data', c => { n += c.length; if (n <= max) ch.push(c); });
     req.on('end', () => { if (n > max) return bad(new HttpError(413, 'body too large')); if (!ch.length) return ok({}); try { const o = JSON.parse(Buffer.concat(ch)); ok(o && typeof o === 'object' ? o : {}); } catch { bad(new HttpError(400, 'bad json')); } });
@@ -65,10 +68,18 @@ function createServer(opts = {}) {
       limit(lim.hit('s:' + ip, ...L.sse)); const { g } = store.auth(code, token);
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
       const send = s => { if (s === null) return res.end(); res.write('event: state\ndata: ' + JSON.stringify(s) + '\n\n'); };
-      res.write('retry: 3000\n\n'); send(store.snapshot(g));
-      const un = store.subscribe(g.code, send); const ka = setInterval(() => res.write(': ka\n\n'), 15000);
+      res.write('retry: 3000\n\n'); send(store.snapshot(g)); const lg = store.recentLog(g); if (lg.length) res.write('event: log\ndata: ' + JSON.stringify(lg) + '\n\n');
+      const unm = store.subscribeMsg(g.code, mg => res.write('event: msg\ndata: ' + JSON.stringify(mg) + '\n\n'));
+      const un0 = store.subscribe(g.code, send); const un = () => { un0(); unm(); }; const ka = setInterval(() => res.write(': ka\n\n'), 15000);
       req.on('close', () => { un(); clearInterval(ka); }); return;
     }
+    if (act === 'clip' && req.method === 'GET') { limit(lim.hit('cg:' + token, ...L.clipGet)); const c = store.getClip(code, token, parts[3]);
+      res.writeHead(200, { 'content-type': c.mime, 'content-length': c.buf.length, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); return res.end(c.buf); }
+    if (act === 'voice' && req.method === 'POST') { const tk = token; store.auth(code, tk);
+      if (!AUDIO_RE.test(String(req.headers['content-type'] || ''))) { req.resume(); throw new HttpError(415, 'unsupported audio type'); }
+      limit(lim.hit('v:' + tk, ...L.voice), 'sending voice too often, wait a few seconds'); limit(lim.hit('vg:' + store.normCode(code), ...L.voiceGroup), 'too many voice clips in this group');
+      const buf = await rawBody(req, store.o.maxClipBytes); const mime = String(req.headers['content-type']).split(';')[0].toLowerCase();
+      const msg = store.addClip(code, tk, buf, mime, q.get('dur')); return json(res, 201, { ok: true, id: msg.id, expiresAt: msg.expiresAt }); }
     if (!act && req.method === 'GET') { const { g, m } = store.auth(code, token); m.lastSeen = store.now(); return json(res, 200, store.snapshot(g)); }
     if (req.method !== 'POST') throw new HttpError(405, 'method not allowed');
     const b = await body(req); const tk = b.token || token;
@@ -77,6 +88,8 @@ function createServer(opts = {}) {
     if (act === 'alert' && parts[3] === 'cancel') { limit(lim.hit('ac:' + tk, ...L.alertCancel), 'too many cancels, slow down'); const r = store.cancelAlert(code, tk); store.flushNow(r.g); return json(res, 200, { ok: true, cancelled: r.had }); }
     if (act === 'alert' && !parts[3]) { store.auth(code, tk); limit(lim.hit('a:' + tk, ...L.alert), 'too many alerts, wait a minute'); limit(lim.hit('ag:' + store.normCode(code), ...L.alertGroup), 'too many alerts in this group');
       const g = store.raiseAlert(code, tk, b); store.flushNow(g); return json(res, 200, { ok: true }); }
+    if (act === 'say') { store.auth(code, tk); limit(lim.hit('sy:' + tk, ...L.say), 'sending too fast, slow down'); limit(lim.hit('syg:' + store.normCode(code), ...L.sayGroup), 'too many messages in this group');
+      const mg = store.say(code, tk, b.type); return json(res, 200, { ok: true, id: mg.id }); }
     if (act === 'leave') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const r = store.leave(code, tk); if (!r.closed) store.flushNow(r.g); return json(res, 200, { ok: true, closed: r.closed }); }
     if (act === 'endtrip') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const r = store.endTrip(code, tk); if (!r.closed) store.flushNow(r.g); return json(res, 200, { ok: true, closed: r.closed ? 'finished' : null }); }
     if (act === 'cancel') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); store.cancelGroup(code, tk); return json(res, 200, { ok: true, closed: 'cancelled' }); }

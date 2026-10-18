@@ -344,7 +344,7 @@ function gGone(e) { // 403/404/410 from the server while in a group
   else if (e.status === 403 || e.status === 404) gStop('That group has ended or you were removed. If it is still running, tap Rejoin or enter the code.');
   else return false; return true; }
 function gStop(msg) {
-  seenAlerts.clear(); $('alertBanner').hidden = true; $('alertBanner').innerHTML = '';
+  gMsgReset(); seenAlerts.clear(); $('alertBanner').hidden = true; $('alertBanner').innerHTML = '';
   kvSet('activeRoute', null);
   gSave(null); G.es?.close(); G.es = null; clearInterval(G.poll); clearInterval(G.send);
   if (G.watch != null) navigator.geolocation.clearWatch(G.watch); G.watch = null; G.firstFix = false; try { G.wake?.release(); } catch {}
@@ -355,6 +355,8 @@ function gConnect() {
   G.es?.close(); const s = G.sess; if (!s || !window.EventSource) return;
   G.es = new EventSource(API_BASE + '/api/groups/' + encodeURIComponent(s.code) + '/events?token=' + s.token);
   G.es.addEventListener('state', e => { G.lastEvt = Date.now(); gApply(JSON.parse(e.data)); $('gConn').textContent = 'Live'; });
+  G.es.addEventListener('msg', e => { try { gIncoming(JSON.parse(e.data), true); } catch {} });
+  G.es.addEventListener('log', e => { try { JSON.parse(e.data).forEach(m => gIncoming(m, false)); } catch {} });
   G.es.onerror = () => { $('gConn').textContent = 'Reconnecting…'; };
 }
 async function gPoll() { // fallback when SSE is silent (proxies that buffer / mobile networks); server only pushes on change
@@ -867,8 +869,86 @@ $('fbForm').onsubmit = async e => {
 addEventListener('online', () => { fbFlush(); });
 setTimeout(() => { fbUpdQueued(); if (navigator.onLine) fbFlush(); }, 3000);
 
+// ---------- group messages: quick messages + push-to-talk voice clips ----------
+const QUICK = { stop: 'Stop', fuel: 'Fuel', tea: 'Tea break', slow: 'Slow down', wait: 'Wait for me', turn: 'Turn ahead', help: 'Need help' };
+const PTT_MAX_MS = 15000, PTT_MIN_MS = 400;
+const optGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v === '1'; } catch { return d; } };
+const optSet = (k, v) => { try { localStorage.setItem(k, v ? '1' : '0'); } catch {} };
+$('optSound').checked = optGet('rk-msg-sound', true); $('optAuto').checked = optGet('rk-msg-auto', true);
+$('optSound').onchange = e => optSet('rk-msg-sound', e.target.checked); $('optAuto').onchange = e => optSet('rk-msg-auto', e.target.checked);
+G.log = []; G.logIds = new Set();
+function gMsgReset() { G.log = []; G.logIds = new Set(); $('msgToast').innerHTML = ''; $('msgToast').hidden = true; $('pttStatus').textContent = ''; renderMsgLog(); try { pttCancel(); } catch {} }
+function msgBeep() { if (!$('optSound').checked) return; window.__lastMsgBeep = Date.now(); try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch {} try { const A = window.AudioContext || window.webkitAudioContext; if (!A) return; const ac = new A(), o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = 740; o.connect(g); g.connect(ac.destination); g.gain.value = .12; o.start(); o.stop(ac.currentTime + .18); setTimeout(() => ac.close(), 400); } catch {} }
+function msgToast(html, ms = 5000) { const box = $('msgToast'); const d = document.createElement('div'); d.className = 'mtoast'; d.innerHTML = html; box.appendChild(d); box.hidden = false;
+  while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(() => { d.remove(); if (!box.children.length) box.hidden = true; }, ms); return d; }
+function msgWho(m) { return G.sess && m.fromId === G.sess.memberId ? 'You' : m.from; }
+function gIncoming(m, live) {
+  if (!m || !m.id || G.logIds.has(m.id)) return; G.logIds.add(m.id); G.log.push(m); if (G.log.length > 50) G.log.shift(); renderMsgLog();
+  const mine = G.sess && m.fromId === G.sess.memberId; if (!live || mine) return;
+  window.__lastMsg = m;
+  if (m.kind === 'quick') { msgBeep(); msgToast(`<span><b>${esc(m.from)}:</b> ${esc(m.text)}</span>`); }
+  else if (m.kind === 'voice') { msgBeep(); const t = msgToast(`<span><b>${esc(m.from)}</b> sent a voice clip (${Math.max(1, Math.round(m.dur / 1000))} s)</span><button type="button" data-play="${esc(m.clipId)}">Play</button>`, 9000);
+    if ($('optAuto').checked) playClip(m).catch(() => {}); }
+}
+function renderMsgLog() {
+  const box = $('gMsgLog'); if (!G.log.length) { box.innerHTML = '<small class="hint">No messages yet.</small>'; return; }
+  box.innerHTML = G.log.slice().reverse().map(m => { const t = new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return m.kind === 'quick' ? `<div class="msgrow"><span><b>${esc(msgWho(m))}:</b> ${esc(m.text)}</span><small>${esc(t)}</small></div>`
+      : `<div class="msgrow"><span><b>${esc(msgWho(m))}</b> voice clip (${Math.max(1, Math.round(m.dur / 1000))} s)</span>${m.expired || Date.now() + G.offset > m.expiresAt ? '<small>expired</small>' : `<button type="button" data-play="${esc(m.clipId)}">Play</button>`}<small>${esc(t)}</small></div>`; }).join('');
+}
+$('gMsgLog').onclick = e => { const b = e.target.closest('[data-play]'); if (!b) return; const m = G.log.find(x => x.clipId === b.dataset.play); if (m) playClip(m); };
+$('msgToast').onclick = e => { const b = e.target.closest('[data-play]'); if (!b) return; const m = G.log.find(x => x.clipId === b.dataset.play); if (m) playClip(m); };
+let curAudio = null;
+async function playClip(m) {
+  const s = G.sess; if (!s) return; try { curAudio?.pause(); } catch {}
+  const r = await fetch(API_BASE + '/api/groups/' + encodeURIComponent(s.code) + '/clip/' + encodeURIComponent(m.clipId) + '?token=' + s.token);
+  if (!r.ok) { m.expired = true; renderMsgLog(); $('pttStatus').textContent = 'That voice clip has expired.'; return; }
+  const url = URL.createObjectURL(await r.blob()); const a = new Audio(url); curAudio = a; window.__lastPlayed = m.clipId;
+  a.onended = a.onerror = () => URL.revokeObjectURL(url);
+  try { await a.play(); } catch (e) { if (e && e.name === 'NotAllowedError') $('pttStatus').textContent = 'Tap Play to hear the clip (the browser blocked auto-play).'; }
+}
+$('qmKinds').innerHTML = Object.entries(QUICK).map(([k, v]) => `<button type="button" class="${k === 'help' ? 'danger' : 'ghost'}" data-q="${k}">${esc(v)}</button>`).join('');
+$('qmKinds').onclick = async e => { const b = e.target.closest('[data-q]'); const s = G.sess; if (!b || !s) return;
+  try { await gApi('POST', '/' + encodeURIComponent(s.code) + '/say', { token: s.token, type: b.dataset.q }); $('pttStatus').textContent = 'Sent: ' + QUICK[b.dataset.q]; try { navigator.vibrate && navigator.vibrate(30); } catch {} }
+  catch (er) { $('pttStatus').textContent = 'Could not send: ' + er.message; } };
+// push-to-talk
+const P = { rec: null, stream: null, chunks: [], t0: 0, timer: null, wantStop: false, busy: false };
+function pttMime() { const MR = window.MediaRecorder; if (!MR || !MR.isTypeSupported) return ''; return ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find(t => MR.isTypeSupported(t)) || ''; }
+function pttCleanup() { clearTimeout(P.timer); P.stream && P.stream.getTracks().forEach(t => t.stop()); P.stream = null; P.rec = null; P.busy = false; $('gPtt').classList.remove('rec'); $('gPtt').textContent = 'Hold to talk'; }
+function pttCancel() { P.wantStop = true; P.chunks = []; const r = P.rec; if (r) { r.onstop = null; try { r.state !== 'inactive' && r.stop(); } catch {} } pttCleanup(); }
+async function pttStart() {
+  if (P.busy || !G.sess) return; P.busy = true; P.wantStop = false; const st = $('pttStatus');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { st.textContent = 'Voice is not supported on this browser or device. Use the quick messages instead.'; P.busy = false; return; }
+  let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
+  catch (e) { P.busy = false; st.textContent = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'PermissionDeniedError')
+      ? 'Microphone permission denied. Allow the microphone for RiderKit in your browser/phone settings to talk. Quick messages still work.'
+      : e && e.name === 'NotFoundError' ? 'No microphone found on this device.' : 'Could not start the microphone: ' + (e && e.message || e); return; }
+  if (P.wantStop) { stream.getTracks().forEach(t => t.stop()); P.busy = false; st.textContent = 'Hold the button while you speak.'; return; }
+  const mime = pttMime(); let rec; try { rec = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 16000 }, mime ? { mimeType: mime } : {})); } catch (e) { stream.getTracks().forEach(t => t.stop()); P.busy = false; st.textContent = 'Could not record audio on this device.'; return; }
+  P.stream = stream; P.rec = rec; P.chunks = []; P.t0 = Date.now();
+  rec.ondataavailable = e => { if (e.data && e.data.size) P.chunks.push(e.data); };
+  rec.onstop = async () => { const dur = Date.now() - P.t0, chunks = P.chunks, type = (rec.mimeType || mime || 'audio/webm').split(';')[0]; pttCleanup();
+    if (dur < PTT_MIN_MS || !chunks.length) { st.textContent = 'Too short. Hold the button while you speak.'; return; }
+    const blob = new Blob(chunks, { type }); st.textContent = 'Sending…'; await pttSend(blob, Math.min(dur, PTT_MAX_MS)); };
+  rec.start(); $('gPtt').classList.add('rec'); $('gPtt').textContent = 'Recording… release to send'; st.textContent = 'Recording (max 15 s)';
+  P.timer = setTimeout(pttStop, PTT_MAX_MS);
+}
+function pttStop() { P.wantStop = true; clearTimeout(P.timer); const r = P.rec; if (r && r.state !== 'inactive') { try { r.stop(); } catch { pttCleanup(); } } }
+async function pttSend(blob, dur) { const s = G.sess; if (!s) return; const st = $('pttStatus');
+  try { const r = await fetch(API_BASE + '/api/groups/' + encodeURIComponent(s.code) + '/voice?token=' + encodeURIComponent(s.token) + '&dur=' + dur, { method: 'POST', headers: { 'content-type': blob.type || 'audio/webm' }, body: blob });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status); st.textContent = 'Voice clip sent.'; window.__lastVoiceSent = Date.now(); }
+  catch (e) { st.textContent = 'Voice clip not sent: ' + e.message; } }
+{ const b = $('gPtt');
+  b.addEventListener('pointerdown', e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch {} pttStart(); });
+  ['pointerup', 'pointercancel'].forEach(ev => b.addEventListener(ev, e => { e.preventDefault(); pttStop(); }));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+  b.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); pttStart(); } });
+  b.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); pttStop(); } }); }
+
 // ---------- init ----------
 applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW failed', e));
 })();
+

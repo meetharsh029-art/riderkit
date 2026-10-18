@@ -283,3 +283,17 @@ html:not([data-theme=dark]) #homeGroup{background:#fff;border:2px solid var(--cy
 #fbForm label{display:block;font-weight:600;margin-top:10px}#fbSend{margin-top:12px;width:100%}
 #homeGroup{font-size:15px;padding-left:8px;padding-right:8px;gap:6px;white-space:nowrap;justify-content:center}#homeGroup .ic{flex:none;width:20px;height:20px}
 #homeGroup{font-size:14px;padding-left:4px;padding-right:4px}
+
+#msgToast{position:fixed;left:50%;transform:translateX(-50%);top:calc(60px + env(safe-area-inset-top));z-index:1200;width:min(92vw,520px);display:grid;gap:8px}
+.mtoast{padding:12px 14px;border-radius:16px;background:#1f2937;color:#fff;border:2px solid #ff7a1a;box-shadow:0 6px 24px rgba(0,0,0,.45);font-size:17px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.mtoast b{font-size:19px}.mtoast button{min-height:40px;border-radius:12px;border:0;background:#ff7a1a;color:#111;font-weight:800;padding:4px 14px}
+.qm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:10px}
+.qm-grid button{min-height:52px;font-weight:800;font-size:16px}
+.ptt{width:100%;min-height:72px;font-size:20px;font-weight:800;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.ptt.rec{background:#dc2626;color:#fff;animation:alertpulse 1s ease-in-out infinite}
+.chk{display:flex;gap:8px;align-items:center;font-size:14px}
+.msglog{max-height:220px;overflow:auto;display:grid;gap:6px}
+.msgrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;border-radius:12px;background:rgba(127,127,127,.15)}
+.msgrow button{min-height:36px;padding:2px 12px}
+html:not([data-theme=dark]) .mtoast{background:#fff;color:#111;border-color:#c2410c}
+@media (prefers-reduced-motion:reduce){.ptt.rec{animation:none}}
