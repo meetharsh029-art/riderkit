@@ -40,3 +40,8 @@ Deploy flow: edit /workspace/rider-app, run /workspace/sync-riderkit.sh (copies 
 
 ## Checkpoint (stage 5 + partial DM client, SW v24)
 - Synced/committed stage 5 clubs + early DM client (community-dm.js, unfinished: no message requests/privacy setting yet, untested).
+
+## Stage 6 UI — DMs (SW v25)
+- Client `community-dm.js`: Messages tab (conversation list, unread badges, Message requests section), thread sheet (history, send, delete own, mute, delete chat, report message / report rider, block), one live SSE stream for all conversations with 5 s polling fallback, toast for new messages. Privacy control "Who can message me" (none / followers / everyone) in the Profile editor; Message button on profile sheets only when allowed.
+- Message requests: server flags a conversation `request` when the peer wrote first, I never replied, I don't follow them and haven't accepted (`POST dm/with/:h/accept`); `/dm` returns `requests` count; thread shows Accept / Delete-and-block banner. Replying or following also clears it.
+- Tests: community.dm.test.js 8 (all 4 backends); e2e.community.js extended (DM, request, report, block).
