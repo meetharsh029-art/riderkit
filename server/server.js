@@ -5,6 +5,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
 const { sanitize, FeedbackStore, safeEq } = require('./feedback');
 const { PushService } = require('./push'), { PinStore, PinError, TYPES: PIN_TYPES } = require('./pins'), { LiveStore, LiveError } = require('./live');
+const { Community } = require('./community'), { makeCommunityApi } = require('./community-api');
 const { Accounts } = require('./auth'), { openKV } = require('./kv'), { makeMailer } = require('./mailer'), { makeSms } = require('./sms');
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
@@ -15,7 +16,16 @@ function createServer(opts = {}) {
   const store = new GroupStore(opts.store || { emptyTtlMs: +process.env.GROUP_EMPTY_TTL_MS || undefined, abandonedTtlMs: +process.env.GROUP_ABANDONED_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
   const lim = new Limiter(opts.now);
   let _kv = opts.kv || null; const getKV = () => _kv || (_kv = openKV(process.env)); // ONE kv instance shared by accounts, push and pins (FileKV must not be opened twice)
-  let acc = opts.accounts || null; const accounts = () => acc || (acc = new Accounts({ kv: getKV(), mailer: makeMailer(process.env), sms: makeSms(process.env), limits: opts.authLimits }));
+  let acc = opts.accounts || null; const accounts = () => acc || (acc = new Accounts({ kv: getKV(), mailer: makeMailer(process.env), sms: makeSms(process.env), limits: opts.authLimits, onDelete: uid => deleteHook(uid) }));
+  // Community (profiles, feed, clubs, chat). Needs durable storage in production: the JSON file on Render free is wiped on every restart, so it refuses to start there unless COMMUNITY_ALLOW_EPHEMERAL=1.
+  let _comm; const communityOn = () => opts.community !== undefined ? !!opts.community : process.env.COMMUNITY === '1' || (process.env.NODE_ENV !== 'production' && process.env.COMMUNITY !== '0');
+  const community = async () => { if (_comm !== undefined) return _comm; if (!communityOn()) return (_comm = null); const A = accounts(), kv = getKV();
+    _comm = new Community({ kv, accounts: A, now: opts.now, adminToken, images: opts.images || null, opts: opts.communityOpts, limits: opts.communityLimits });
+    if (_comm.attachImages) _comm.attachImages(opts.images || null, process.env);
+    if (process.env.NODE_ENV === 'production' && kv.kind !== 'postgres' && process.env.COMMUNITY_ALLOW_EPHEMERAL !== '1') _comm.disabledReason = 'community needs DATABASE_URL (Postgres) in production; the JSON file is lost on every restart (set COMMUNITY_ALLOW_EPHEMERAL=1 to override for a throwaway test)';
+    return _comm; };
+  const deleteHook = async uid => { const C = await community(); if (C) await C.deleteUser(uid); }; if (acc && !acc.onDelete) acc.onDelete = deleteHook;
+  const communityApi = makeCommunityApi({ community, body: (r, m) => body(r, m), rawBody: (r, m) => rawBody(r, m), json: (r, s, o) => json(r, s, o) });
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
   const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3], expense: [10, 60e3], stopReq: [6, 60e3], stopAct: [30, 60e3], liveCreate: [6, 3600e3], liveUpdate: [1, 2000], liveRead: [40, 60e3], pinAdd: [5, 3600e3], pinAddIp: [12, 3600e3], pinVote: [60, 3600e3], pinReport: [10, 3600e3], pinRead: [60, 60e3], pushSync: [12, 60e3], pushTest: [3, 3600e3] }, opts.limits);
   let _pins = opts.pins || null; const pins = () => _pins || (_pins = new PinStore({ kv: getKV() }));
@@ -82,6 +92,7 @@ function createServer(opts = {}) {
       }
       throw new HttpError(405, 'method not allowed');
     }
+    if (parts[0] === 'community') return communityApi(req, res, url, parts.slice(1), ip);
     if (parts[0] === 'live') { const wrap = fn => { try { return fn(); } catch (e) { throw e instanceof LiveError ? new HttpError(e.status, e.message) : e; } }, id = parts[1], act = parts[2];
       if (req.method === 'GET' && id) { limit(lim.hit('lr:' + ip + id, ...L.liveRead), 'polling too fast'); return json(res, 200, wrap(() => live.view(id))); }
       if (req.method !== 'POST') throw new HttpError(405, 'method not allowed');

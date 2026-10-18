@@ -12,6 +12,7 @@
 <meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="community.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -360,6 +361,11 @@
       <small class="hint">After a ride RiderKit asks &ldquo;What was this stop?&rdquo; for each pause of 3+ minutes it noticed.</small></div>
   </section>
 
+  <section id="tab-community" class="tab" aria-label="Community">
+    <h2 class="h-title"><svg class="ic lg"><use href="#i-group"/></svg>Community</h2>
+    <div id="cmRoot"></div>
+  </section>
+
   <section id="tab-me" class="tab">
     <h2 class="h-title"><svg class="ic lg"><use href="#i-sos"/></svg>SOS &amp; settings</h2>
     <form id="setForm" class="glass card">
@@ -430,6 +436,7 @@
   <button data-tab="fuel" role="menuitem"><svg class="ic"><use href="#i-fuel"/></svg>Fuel</button>
   <button data-tab="docs" role="menuitem"><svg class="ic"><use href="#i-doc"/></svg>Docs</button>
   <button data-tab="help" role="menuitem"><svg class="ic"><use href="#i-help"/></svg>Help</button>
+  <button data-tab="community" role="menuitem"><svg class="ic"><use href="#i-group"/></svg>Community</button>
   <button data-tab="group" role="menuitem"><svg class="ic"><use href="#i-group"/></svg>Group</button>
   <button data-tab="feedback" role="menuitem"><svg class="ic"><use href="#i-help"/></svg>Feedback</button>
   <button data-tab="me" role="menuitem"><svg class="ic"><use href="#i-sos"/></svg>SOS</button>
@@ -446,6 +453,7 @@
 <script src="lib-extra.js"></script>
 <script src="app.js"></script>
 <script src="app-extra.js"></script>
+<script src="community.js"></script>
 <div id="xToast" class="msg-toast" role="status" hidden style="position:fixed;left:12px;right:12px;bottom:88px;z-index:60;background:#0f172a;color:#fff;padding:12px 16px;border-radius:12px;font-size:16px"></div>
 </body>
 </html>

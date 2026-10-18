@@ -16,7 +16,7 @@ const eq = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(
 const pubUser = u => ({ id: u.id, email: u.email || null, phone: u.phone || null, createdAt: u.createdAt });
 
 class Accounts {
-  constructor({ kv, mailer, sms, now = () => Date.now(), opts = {}, limits = {} }) { this.kv = kv; this.mailer = mailer; this.sms = sms; this.now = now; this.o = Object.assign({}, OPTS, opts); this.L = Object.assign({}, L0, limits); this.lim = new Limiter(now); this.P = Object.assign({}, P, opts.scrypt); this.secretP = null; this.dummy = null; }
+  constructor({ kv, mailer, sms, now = () => Date.now(), opts = {}, limits = {}, onDelete = null }) { this.onDelete = onDelete; this.kv = kv; this.mailer = mailer; this.sms = sms; this.now = now; this.o = Object.assign({}, OPTS, opts); this.L = Object.assign({}, L0, limits); this.lim = new Limiter(now); this.P = Object.assign({}, P, opts.scrypt); this.secretP = null; this.dummy = null; }
   get emailEnabled() { return !!this.mailer && this.mailer.enabled; }
   get phoneEnabled() { return !!this.sms && this.sms.enabled; }
   config() { return { email: this.emailEnabled, phone: this.phoneEnabled, pwMin: this.o.pwMin }; }
@@ -81,6 +81,7 @@ class Accounts {
     this.limit('ip:' + ip, this.L.ip); this.limit('del:' + user.id, this.L.delete);
     if (user.pwHash) { if (!await this.verifyHash(String(password ?? ''), user.pwHash).catch(() => false)) throw new HttpError(401, 'wrong password'); }
     else { if (!user.phone) throw new HttpError(400, 'cannot confirm this account'); await this.checkCode('delete', user.phone, code); }
+    if (this.onDelete) await this.onDelete(user.id); // community cascade (profile, posts, images, comments, likes, follows, clubs, chats...) runs BEFORE the account vanishes, so a failure leaves a retryable account
     await this.logoutAll(user.id); if (user.email) { await this.kv.del('email', user.email); await this.kv.del('pend', 'signup:' + user.email); await this.kv.del('pend', 'reset:' + user.email); }
     if (user.phone) { await this.kv.del('phone', user.phone); await this.kv.del('pend', 'phone:' + user.phone); await this.kv.del('pend', 'delete:' + user.phone); } await this.kv.del('user', user.id); return { ok: true, deleted: true }; }
   // ---- phone OTP (disabled unless an SMS provider is configured)

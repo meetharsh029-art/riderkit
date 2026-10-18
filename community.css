@@ -1,0 +1,25 @@
+/* RiderKit community. Uses the theme variables from styles.css so light and dark both work. */
+.cm-tabs{display:flex;gap:6px;overflow-x:auto;margin:6px 0 10px;padding-bottom:4px}
+.cm-tabs button{min-height:44px;padding:8px 14px;font-size:14px;border-radius:999px;white-space:nowrap;position:relative}
+.cm-tabs button.on{color:var(--cy2,#2563eb);border-color:var(--cy,#2563eb);background:var(--acc-soft,rgba(37,99,235,.1))}
+.cm-badge{font-style:normal;background:var(--red,#dc2626);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px;margin-left:6px}
+.cm-toast{position:sticky;top:64px;z-index:20;padding:10px 14px;border-radius:14px;background:var(--glass2);border:1px solid var(--line);margin:6px 0;font-size:14px}
+.cm-toast.bad{border-color:var(--red,#dc2626);color:var(--red,#b91c1c)}
+.cm-av{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--glass2);border:1px solid var(--line);font-size:20px;flex:none}.cm-av.big{width:56px;height:56px;font-size:30px}
+.cm-head{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.cm-f{display:block;margin:8px 0}.cm-f>span{display:block;font-size:13px;color:var(--mut);font-weight:600}
+.cm-line{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.cm-modal{position:fixed;inset:0;z-index:2500;background:rgba(2,6,23,.55);display:grid;place-items:center;padding:16px}
+.cm-sheet{width:100%;max-width:420px;padding:18px;max-height:90vh;overflow:auto}
+.cm-post{padding:14px;margin:12px 0}.cm-post .cm-meta{display:flex;align-items:center;gap:10px}.cm-post .cm-meta b{display:block}
+.cm-post img.cm-img{width:100%;border-radius:14px;margin:8px 0;display:block;background:var(--glass2);max-height:520px;object-fit:contain}
+.cm-photos{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}.cm-photos img{width:100%;height:120px;object-fit:cover;border-radius:12px}
+.cm-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.cm-actions button{min-height:44px;padding:6px 12px;font-size:14px}
+.cm-caption{white-space:pre-wrap;word-break:break-word;margin:6px 0}
+.cm-chat{display:flex;flex-direction:column;gap:6px;max-height:48vh;min-height:160px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--glass2)}
+.cm-msg{max-width:86%;padding:8px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--line);word-break:break-word;align-self:flex-start}.cm-msg.mine{align-self:flex-end;background:var(--acc-soft,rgba(37,99,235,.12))}.cm-msg small{display:block}
+.cm-compose{display:flex;gap:8px;margin-top:8px}.cm-compose input{margin:0}.cm-compose button{flex:none}
+.cm-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);text-align:left;width:100%;background:none;border-left:0;border-right:0;border-top:0;border-radius:0}
+.cm-item .cm-grow{flex:1;min-width:0}.cm-item b,.cm-item small{display:block;overflow:hidden;text-overflow:ellipsis}
+.cm-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.cm-thumbs .cm-th{position:relative}.cm-thumbs img{width:84px;height:84px;object-fit:cover;border-radius:10px}.cm-thumbs button{position:absolute;top:-6px;right:-6px;min-height:28px;width:28px;padding:0;border-radius:50%}
+.cm-warn{font-size:13px;color:var(--mut);border-left:3px solid var(--am,#d97706);padding-left:8px;margin:6px 0}
