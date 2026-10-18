@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: riderkit
+    runtime: node
+    plan: free
+    buildCommand: echo "no build step"
+    startCommand: node server/server.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: NODE_VERSION
+        value: "20"

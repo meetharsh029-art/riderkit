@@ -1,0 +1,363 @@
+// Pure logic, usable in browser (window.Core) and Node (module.exports) for tests.
+(function (root) {
+  const R = 6371008.8; // metres
+  const rad = d => d * Math.PI / 180;
+  function haversine(a, b) {
+    const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+  function totalDistance(pts) { let d = 0; for (let i = 1; i < pts.length; i++) d += haversine(pts[i - 1], pts[i]); return d; }
+  // Accept a GPS fix? Drop poor accuracy and tiny jitter.
+  function acceptFix(prev, fix, opts) {
+    const o = Object.assign({ maxAcc: 50, minMove: 5 }, opts);
+    if (fix.acc != null && fix.acc > o.maxAcc) return false;
+    if (!prev) return true;
+    return haversine(prev, fix) >= Math.max(o.minMove, 0) ;
+  }
+  const kmh = ms => ms * 3.6;
+  function fmtDuration(s) { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; const p = n => String(n).padStart(2, '0'); return (h ? h + ':' : '') + p(m) + ':' + p(x); }
+  function fmtKm(m) { return (m / 1000).toFixed(2); }
+  function fmtINR(n) { return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+
+  // Crash detector: big impact spike, then stillness (≈gravity only) for stillMs.
+  class CrashDetector {
+    constructor(o) {
+      this.o = Object.assign({ impact: 30, g: 9.81, stillTol: 1.5, stillMs: 3000, windowMs: 8000 }, o);
+      this.reset();
+    }
+    reset() { this.impactT = null; this.stillSince = null; }
+    // sample: {t (ms), mag (m/s², incl. gravity)}; returns true when crash is detected
+    feed(s) {
+      const o = this.o;
+      if (this.impactT === null) {
+        if (s.mag >= o.impact) { this.impactT = s.t; this.stillSince = null; }
+        return false;
+      }
+      if (s.t - this.impactT > o.windowMs + o.stillMs) { this.reset(); return false; }
+      if (s.t - this.impactT < 500) return false; // ignore the impact's own ringing
+      if (Math.abs(s.mag - o.g) <= o.stillTol) {
+        if (this.stillSince === null) this.stillSince = s.t;
+        if (s.t - this.stillSince >= o.stillMs) { this.reset(); return true; }
+      } else {
+        this.stillSince = null; // movement resumed (e.g. a pothole, phone dropped in pocket)
+        if (s.mag >= o.impact) this.impactT = s.t;
+      }
+      return false;
+    }
+  }
+  function alertLinks(contact, name, loc) {
+    const link = loc ? `https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lon.toFixed(6)}` : '(location unavailable)';
+    const msg = `EMERGENCY: ${name || 'A rider'} may have crashed. Please call them. Last location: ${link}`;
+    const num = String(contact || '').replace(/[^\d+]/g, '');
+    return {
+      message: msg,
+      sms: `sms:${num}?body=${encodeURIComponent(msg)}`,
+      whatsapp: `https://wa.me/${num.replace(/^\+/, '')}?text=${encodeURIComponent(msg)}`,
+    };
+  }
+  // Maintenance status. item: {kmInterval, dayInterval, lastKm, lastDate(ISO)}; odo = current odometer km
+  function maintStatus(item, odo, now) {
+    now = now || Date.now();
+    const out = { due: false, soon: false, reasons: [] };
+    if (item.kmInterval && item.lastKm != null) {
+      const left = item.lastKm + item.kmInterval - odo;
+      if (left <= 0) { out.due = true; out.reasons.push(`${Math.abs(Math.round(left))} km overdue`); }
+      else if (left <= item.kmInterval * 0.1) { out.soon = true; out.reasons.push(`${Math.round(left)} km left`); }
+      else out.reasons.push(`${Math.round(left)} km left`);
+    }
+    if (item.dayInterval && item.lastDate) {
+      const left = Math.round((new Date(item.lastDate).getTime() + item.dayInterval * 864e5 - now) / 864e5);
+      if (left <= 0) { out.due = true; out.reasons.push(`${Math.abs(left)} days overdue`); }
+      else if (left <= Math.max(7, item.dayInterval * 0.1)) { out.soon = true; out.reasons.push(`${left} days left`); }
+      else out.reasons.push(`${left} days left`);
+    }
+    return out;
+  }
+
+  // ---- Document expiry. doc: {type, expiry:'YYYY-MM-DD'}. Dates are compared as local calendar days.
+  const DOC_TYPES = { insurance: 'Insurance', puc: 'PUC (pollution certificate)', dl: 'Driving licence', rc: 'RC (registration certificate)' };
+  function dayNum(iso) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); if (!m) return null;
+    const d = Date.UTC(+m[1], +m[2] - 1, +m[3]); const chk = new Date(d);
+    if (chk.getUTCMonth() !== +m[2] - 1 || chk.getUTCDate() !== +m[3]) return null; return d / 864e5; }
+  function todayNum(now) { const d = new Date(now == null ? Date.now() : now); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5; }
+  // -> {state:'none'|'expired'|'soon'|'ok', days (negative = days ago), label}
+  function docStatus(doc, now, warnDays) {
+    warnDays = warnDays == null ? 30 : warnDays;
+    const e = dayNum(doc && doc.expiry); if (e === null) return { state: 'none', days: null, label: 'No expiry date set' };
+    const days = e - todayNum(now);
+    if (days < 0) return { state: 'expired', days, label: `Expired ${-days} day${-days === 1 ? '' : 's'} ago` };
+    if (days === 0) return { state: 'soon', days, label: 'Expires today' };
+    if (days <= warnDays) return { state: 'soon', days, label: `Expires in ${days} day${days === 1 ? '' : 's'}` };
+    return { state: 'ok', days, label: `Valid, ${days} days left` };
+  }
+  // docs: array; returns the ones needing an alert, most urgent first
+  function docAlerts(docs, now) {
+    return (docs || []).map(d => Object.assign({ doc: d }, docStatus(d, now))).filter(x => x.state === 'expired' || x.state === 'soon').sort((a, b) => a.days - b.days);
+  }
+
+  // ---- GPX 1.1
+  const xmlEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+  const xmlUnesc = s => String(s).replace(/&(lt|gt|quot|apos|amp|#\d+|#x[0-9a-fA-F]+);/g, (m, g) => ({ lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }[g] || (g[1] === 'x' ? String.fromCodePoint(parseInt(g.slice(2), 16)) : String.fromCodePoint(+g.slice(1)))));
+  // ride: {start(ms), points:[{lat,lon,t(ms)}], name?, notes?}
+  function toGPX(ride, name) {
+    const nm = name || ride.name || 'RiderKit ride ' + new Date(ride.start).toISOString();
+    const pts = (ride.points || []).filter(p => isFinite(p.lat) && isFinite(p.lon));
+    const trkpts = pts.map(p => `      <trkpt lat="${Number(p.lat).toFixed(6)}" lon="${Number(p.lon).toFixed(6)}">` +
+      (p.t ? `<time>${new Date(p.t).toISOString()}</time>` : '') + '</trkpt>').join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="RiderKit" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">\n` +
+      `  <metadata><name>${xmlEsc(nm)}</name>${ride.start ? `<time>${new Date(ride.start).toISOString()}</time>` : ''}</metadata>\n` +
+      `  <trk>\n    <name>${xmlEsc(nm)}</name>\n    <trkseg>\n${trkpts}${trkpts ? '\n' : ''}    </trkseg>\n  </trk>\n</gpx>\n`;
+  }
+  // Tolerant parser: track points, route points and waypoints. Throws on non-GPX or no points.
+  function parseGPX(text) {
+    text = String(text || '');
+    if (!/<gpx[\s>]/i.test(text)) throw new Error('Not a GPX file');
+    const nameM = /<(?:trk|rte)[^>]*>\s*(?:<[^>]*>\s*)*?<name>([\s\S]*?)<\/name>/i.exec(text) || /<metadata[^>]*>[\s\S]*?<name>([\s\S]*?)<\/name>/i.exec(text);
+    const grab = tag => { const out = []; const re = new RegExp(`<${tag}\\b([^>]*?)(?:/>|>([\\s\\S]*?)</${tag}>)`, 'gi'); let m;
+      while ((m = re.exec(text))) { const a = m[1]; const la = /\blat\s*=\s*["']([^"']+)["']/i.exec(a), lo = /\blon\s*=\s*["']([^"']+)["']/i.exec(a);
+        if (!la || !lo) continue; const lat = parseFloat(la[1]), lon = parseFloat(lo[1]);
+        if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) continue;
+        const tm = m[2] && /<time>\s*([^<]+?)\s*<\/time>/i.exec(m[2]); const t = tm ? Date.parse(tm[1]) : NaN;
+        out.push(isNaN(t) ? { lat, lon } : { lat, lon, t }); } return out; };
+    let points = grab('trkpt'); if (!points.length) points = grab('rtept'); if (!points.length) points = grab('wpt');
+    if (!points.length) throw new Error('GPX has no points');
+    return { name: nameM ? xmlUnesc(nameM[1].trim()) : 'Imported route', points };
+  }
+
+  // ---- Roadside help
+  const DEFAULT_CONTACTS = () => [
+    { id: 'def-112', name: 'Emergency (national)', number: '112', note: 'India single emergency number', verify: true },
+    { id: 'def-1033', name: 'National Highway helpline', number: '1033', note: 'NHAI highway helpline', verify: true },
+    { id: 'def-tow', name: 'Towing service', number: '', note: 'Add your local number', verify: false },
+    { id: 'def-mech', name: 'Mechanic', number: '', note: 'Add your local number', verify: false },
+    { id: 'def-ins', name: 'Insurance helpline', number: '', note: 'Number is on your policy', verify: false },
+  ];
+  const telLink = n => { const d = String(n || '').replace(/[^\d+*#]/g, ''); return d ? 'tel:' + d : ''; };
+  function shareLocationLinks(num, name, loc) {
+    const link = loc ? `https://maps.google.com/?q=${loc.lat.toFixed(6)},${loc.lon.toFixed(6)}` : null;
+    const message = link ? `${name || 'A rider'} needs roadside help. My last known location: ${link}` : `${name || 'A rider'} needs roadside help. (Location unavailable - please call me.)`;
+    const d = String(num || '').replace(/[^\d+]/g, '');
+    return { message, sms: `sms:${d}?body=${encodeURIComponent(message)}`,
+      whatsapp: d ? `https://wa.me/${d.replace(/^\+/, '')}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}` };
+  }
+
+  // ---- group ride helpers ----
+  const STOP_MS = 3 * 60e3, STALE_MS = 60e3, BEHIND_M = 2000;
+  // members: server snapshot members; now: server-adjusted clock. Returns members + derived distance/flags.
+  function groupFlags(members, dest, now, o) {
+    o = Object.assign({ stopMs: STOP_MS, staleMs: STALE_MS, behindM: BEHIND_M }, o);
+    const rows = members.map(m => { const has = m.lat != null && m.lng != null; const pos = has ? { lat: m.lat, lon: m.lng } : null;
+      const online = now - m.lastSeen < o.staleMs;
+      return Object.assign({}, m, { hasPos: has, online, distToDest: has && dest ? haversine(pos, { lat: dest.lat, lon: dest.lng }) : null,
+        stopped: has && online && m.movedAt != null && now - m.movedAt >= o.stopMs, behind: false, behindBy: null }); });
+    const act = rows.filter(r => r.hasPos && r.online);
+    if (act.length >= 2) {
+      if (dest) { const lead = Math.min(...act.map(r => r.distToDest)); act.forEach(r => { r.behindBy = r.distToDest - lead; r.behind = r.behindBy > o.behindM; }); }
+      else { const c = { lat: act.reduce((a, r) => a + r.lat, 0) / act.length, lon: act.reduce((a, r) => a + r.lng, 0) / act.length };
+        act.forEach(r => { r.behindBy = haversine({ lat: r.lat, lon: r.lng }, c); r.behind = r.behindBy > o.behindM * 1.5; }); }
+    }
+    return rows;
+  }
+  function fmtAgo(ms) { const s = Math.max(0, Math.round(ms / 1000)); if (s < 10) return 'just now'; if (s < 60) return s + 's ago'; if (s < 3600) return Math.floor(s / 60) + ' min ago'; return Math.floor(s / 3600) + ' h ago'; }
+  function fmtDist(m) { return m == null ? '–' : m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km'; }
+  function normCode(c) { c = String(c || '').toUpperCase().replace(/\s/g, ''); if (/^\d{4}$/.test(c)) c = 'RIDE-' + c; return c.replace(/^RIDE(\d{4})$/, 'RIDE-$1'); }
+  function codeFromSearch(search) { const m = /[?&]join=([^&#]*)/i.exec(search || ''); if (!m) return ''; let v = ''; try { v = decodeURIComponent(m[1]); } catch { return ''; } v = normCode(v); return /^RIDE-\d{4}$/.test(v) ? v : ''; }
+  function gmapsLink(dest, origin) { let u = 'https://www.google.com/maps/dir/?api=1&destination=' + dest.lat.toFixed(6) + ',' + dest.lng.toFixed(6) + '&travelmode=driving';
+    if (origin) u += '&origin=' + origin.lat.toFixed(6) + ',' + origin.lon.toFixed(6); return u; }
+  // OSRM step -> human text
+  function stepText(st) {
+    const mv = st.maneuver || {}, type = mv.type, mod = mv.modifier, name = st.name ? ' onto ' + st.name : '';
+    const dir = { 'sharp left': 'sharp left', left: 'left', 'slight left': 'slight left', straight: 'straight', 'slight right': 'slight right', right: 'right', 'sharp right': 'sharp right', uturn: 'a U-turn' };
+    const d = dir[mod] || '';
+    switch (type) {
+      case 'depart': return 'Head' + (st.name ? ' on ' + st.name : ' out');
+      case 'arrive': return 'Arrive at destination' + (d && mod !== 'straight' ? ' (on the ' + d + ')' : '');
+      case 'roundabout': case 'rotary': return 'Enter the roundabout' + (mv.exit ? ', take exit ' + mv.exit : '') + (st.name ? ' onto ' + st.name : '');
+      case 'exit roundabout': case 'exit rotary': return 'Exit the roundabout' + name;
+      case 'merge': return 'Merge' + (d ? ' ' + d : '') + name;
+      case 'fork': return 'Keep ' + (d || 'on') + ' at the fork' + name;
+      case 'on ramp': case 'off ramp': return 'Take the ramp' + (d ? ' on the ' + d : '') + name;
+      case 'end of road': return 'At the end of the road turn ' + (d || 'ahead') + name;
+      case 'continue': return (mod === 'straight' || !d ? 'Continue straight' : 'Continue ' + d) + name;
+      case 'new name': return 'Continue' + name;
+      default: return (mod === 'uturn' ? 'Make a U-turn' : d ? (mod === 'straight' ? 'Go straight' : 'Turn ' + d) : 'Continue') + name;
+    }
+  }
+  function parseRoute(j) {
+    if (!j || j.code !== 'Ok' || !j.routes || !j.routes[0]) throw new Error((j && j.message) || 'no route found');
+    const r = j.routes[0]; const steps = [];
+    (r.legs || []).forEach(l => (l.steps || []).forEach(s => steps.push({ text: stepText(s), dist: s.distance, lat: s.maneuver && s.maneuver.location ? s.maneuver.location[1] : null, lng: s.maneuver && s.maneuver.location ? s.maneuver.location[0] : null })));
+    return { distance: r.distance, duration: r.duration, line: r.geometry.coordinates.map(c => [c[1], c[0]]), steps };
+  }
+  // ---- v4: dashboard statistics (all pure; `now` in ms; days/weeks/months use the device's LOCAL calendar)
+  const dayKey = ms => { const d = new Date(ms); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+  const monthKey = ms => { const d = new Date(ms); return d.getFullYear() * 12 + d.getMonth(); };
+  const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // rides: [{start(ms), dist(m), dur(s), maxSpeed(km/h)}] -> totals + week/month + last-7-days + last-6-months series
+  function rideStats(rides, now) {
+    now = now == null ? Date.now() : now; rides = (rides || []).filter(r => r && isFinite(r.start));
+    const num = v => (isFinite(v) && v > 0 ? +v : 0);
+    const totalM = rides.reduce((s, r) => s + num(r.dist), 0), totalS = rides.reduce((s, r) => s + num(r.dur), 0);
+    const out = { count: rides.length, totalKm: totalM / 1000, totalSec: totalS, topSpeed: rides.reduce((m, r) => Math.max(m, num(r.maxSpeed)), 0),
+      avgSpeed: totalS > 0 ? kmh(totalM / totalS) : 0, last: rides.slice().sort((a, b) => b.start - a.start)[0] || null };
+    // last 7 local days, oldest first (setDate keeps local-day arithmetic correct across DST)
+    out.days = []; const base = new Date(now); base.setHours(12, 0, 0, 0);
+    for (let i = 6; i >= 0; i--) { const d = new Date(base); d.setDate(d.getDate() - i); const k = dayKey(d.getTime());
+      const rs = rides.filter(r => dayKey(r.start) === k); out.days.push({ key: k, label: WD[d.getDay()], km: rs.reduce((s, r) => s + num(r.dist), 0) / 1000, rides: rs.length }); }
+    out.months = []; const nd = new Date(now);
+    for (let i = 5; i >= 0; i--) { const d = new Date(nd.getFullYear(), nd.getMonth() - i, 1); const k = monthKey(d.getTime());
+      const rs = rides.filter(r => monthKey(r.start) === k); out.months.push({ key: k, label: MN[d.getMonth()], km: rs.reduce((s, r) => s + num(r.dist), 0) / 1000, rides: rs.length, sec: rs.reduce((s, r) => s + num(r.dur), 0) }); }
+    const mon = new Date(now); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); // Monday 00:00 local
+    const wk = rides.filter(r => r.start >= mon.getTime() && r.start <= now);
+    out.week = { km: wk.reduce((s, r) => s + num(r.dist), 0) / 1000, rides: wk.length, sec: wk.reduce((s, r) => s + num(r.dur), 0) };
+    const mo = out.months[5]; out.month = { km: mo.km, rides: mo.rides, sec: mo.sec };
+    return out;
+  }
+  // "Places covered": distinct grid cells touched by any saved route. Default 0.05 deg (~5.5 km north-south). An approximation, not a real place count.
+  const CELL_DEG = 0.05;
+  const cellOf = (lat, lon, deg) => { deg = deg || CELL_DEG; return Math.floor(lat / deg) + ',' + Math.floor(lon / deg); };
+  function gridCells(rides, deg) {
+    deg = deg || CELL_DEG; const set = new Map();
+    (rides || []).forEach(r => (r.points || []).forEach(p => { if (!p || !isFinite(p.lat) || !isFinite(p.lon) || Math.abs(p.lat) > 90 || Math.abs(p.lon) > 180) return;
+      const k = cellOf(p.lat, p.lon, deg); if (!set.has(k)) { const [i, j] = k.split(',').map(Number); set.set(k, { key: k, lat: (i + 0.5) * deg, lon: (j + 0.5) * deg }); } }));
+    return [...set.values()];
+  }
+  // Thin a route to at most `max` points for drawing (keeps first and last).
+  function thin(points, max) { points = points || []; max = max || 300; if (points.length <= max) return points.slice(); const step = (points.length - 1) / (max - 1); const o = []; for (let i = 0; i < max; i++) o.push(points[Math.round(i * step)]); return o; }
+  // Most urgent maintenance item. progress = share of the interval already used (max of km and days); 1 = due.
+  function nextService(items, odo, now) {
+    now = now == null ? Date.now() : now; let best = null;
+    (items || []).forEach(it => {
+      let prog = null, leftKm = null, leftDays = null;
+      if (it.kmInterval && it.lastKm != null) { leftKm = it.lastKm + it.kmInterval - odo; prog = Math.max(prog || 0, (it.kmInterval - leftKm) / it.kmInterval); }
+      if (it.dayInterval && it.lastDate) { const t = new Date(it.lastDate).getTime(); if (isFinite(t)) { leftDays = Math.round((t + it.dayInterval * 864e5 - now) / 864e5); prog = Math.max(prog || 0, (it.dayInterval - leftDays) / it.dayInterval); } }
+      if (prog === null) return; prog = Math.max(0, prog);
+      if (!best || prog > best.progress) best = { item: it, progress: prog, leftKm, leftDays, status: maintStatus(it, odo, now) };
+    });
+    return best;
+  }
+  // Tyre tracking. tyre: {installKm (odometer at fitting), installDate 'YYYY-MM-DD', lastPressure 'YYYY-MM-DD'?, brand?}
+  // Guidance values are GENERIC rules of thumb (not a manufacturer spec): pressure weekly, inspection every 1,000 km, replace-by guide 25,000 km / 5 years.
+  const TYRE_GUIDE = { pressureDays: 7, checkKm: 1000, lifeKm: 25000, maxAgeDays: 5 * 365 };
+  function tyreStatus(t, odo, now, g) {
+    g = Object.assign({}, TYRE_GUIDE, g); now = now == null ? Date.now() : now;
+    if (!t || t.installKm == null || !isFinite(t.installKm)) return null;
+    const kmSince = Math.max(0, odo - t.installKm); const inst = dayNum(t.installDate);
+    const daysSince = inst === null ? null : Math.max(0, Math.round(todayNum(now) - inst));
+    const pr = dayNum(t.lastPressure); const pressureAgo = pr === null ? null : Math.max(0, Math.round(todayNum(now) - pr));
+    const kmToCheck = g.checkKm - (kmSince % g.checkKm);
+    const lifePct = Math.min(1.5, kmSince / g.lifeKm);
+    const ageWarn = daysSince !== null && daysSince >= g.maxAgeDays;
+    const state = lifePct >= 1 || ageWarn ? 'replace' : lifePct >= 0.8 ? 'watch' : 'ok';
+    return { kmSince, daysSince, kmToCheck, checkKm: g.checkKm, lifePct, lifeKm: g.lifeKm, ageWarn, pressureAgo, pressureDue: pressureAgo === null || pressureAgo >= g.pressureDays, pressureDays: g.pressureDays, state };
+  }
+  // Deterministic sample data for the demo toggle (never written to the database). Routes follow rough road corridors around Bengaluru.
+  function demoData(now) {
+    now = now == null ? Date.now() : now; let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const corridors = [
+      [[12.9716, 77.5946], [13.0827, 77.5877], [13.2257, 77.5750], [13.3702, 77.6835]],   // north (Nandi hills side)
+      [[12.9716, 77.5946], [12.9141, 77.4800], [12.8000, 77.2200], [12.5200, 76.8950]],   // south-west towards Mandya
+      [[12.9716, 77.5946], [12.9250, 77.6700], [12.8450, 77.6600], [12.7400, 77.8200]],   // south-east (Hosur side)
+      [[12.9716, 77.5946], [13.0100, 77.7000], [13.0700, 77.8000], [13.1350, 77.9900]],   // east
+      [[12.9716, 77.5946], [12.9352, 77.6245], [12.9784, 77.6408], [12.9716, 77.5946]],   // city loop
+    ];
+    const rides = [], daysAgo = [0, 1, 2, 4, 6, 9, 12, 17, 24, 33, 48, 63, 85, 110, 140];
+    daysAgo.forEach((da, i) => {
+      const cor = corridors[i % corridors.length], pts = []; const start = now - da * 864e5 - (6 + (i % 5)) * 36e5; let t = start;
+      for (let s = 0; s < cor.length - 1; s++) { const a = cor[s], b = cor[s + 1]; const n = Math.max(2, Math.round(haversine({ lat: a[0], lon: a[1] }, { lat: b[0], lon: b[1] }) / 250));
+        for (let k = (s ? 1 : 0); k <= n; k++) { const f = k / n; pts.push({ lat: a[0] + (b[0] - a[0]) * f + (rnd() - .5) * 0.0006, lon: a[1] + (b[1] - a[1]) * f + (rnd() - .5) * 0.0006, t: (t += 14000) }); } }
+      const dist = totalDistance(pts), dur = (pts[pts.length - 1].t - start) / 1000 + 600;
+      rides.push({ id: 'demo' + i, start, end: start + dur * 1000, dur, dist, avgSpeed: kmh(dist / dur), maxSpeed: 62 + (i * 7) % 48, points: pts, notes: '', photos: [], demo: true });
+    });
+    const d = o => new Date(now + o * 864e5).toISOString().slice(0, 10);
+    const odoBase = 12400; const odo = odoBase + rides.reduce((s, r) => s + r.dist, 0) / 1000;
+    return { rides, odoBase, odo, vehicle: { id: 'demo-v', type: 'bike', make: 'Demo', model: 'Rider 250', year: 2022, fuel: 'petrol', odo: odoBase },
+      maint: [{ id: 'dm1', vehicleId: 'demo-v', name: 'Oil change', kmInterval: 3000, dayInterval: 180, lastKm: Math.round(odo - 2450), lastDate: d(-96) },
+              { id: 'dm2', vehicleId: 'demo-v', name: 'Chain lube/adjust', kmInterval: 600, dayInterval: null, lastKm: Math.round(odo - 210), lastDate: d(-12) }],
+      tyres: { front: { brand: 'Demo Tyres F', installKm: Math.round(odo - 9400), installDate: d(-310), lastPressure: d(-3) }, rear: { brand: 'Demo Tyres R', installKm: Math.round(odo - 21300), installDate: d(-640), lastPressure: d(-11) } },
+      docs: { insurance: { expiry: d(12) }, puc: { expiry: d(160) }, dl: { expiry: d(900) }, rc: { expiry: d(2000) } } };
+  }
+  // ---- v4: vehicles + generic service schedules
+  // These are GENERIC rules of thumb, NOT manufacturer specs. The UI labels them "verify against your owner's manual".
+  const VEHICLE_TYPES = { bike: 'Bike / motorcycle', car: 'Car' };
+  const FUELS = { bike: ['petrol', 'electric'], car: ['petrol', 'diesel', 'cng', 'hybrid', 'electric'] };
+  const MONTH_DAYS = 30.4375;
+  const monthsToDays = m => (m ? Math.round(m * MONTH_DAYS) : null);
+  const daysToMonths = d => (d ? Math.max(1, Math.round(d / MONTH_DAYS)) : null);
+  // Returns [{name, kmInterval|null, monthInterval|null}]
+  function suggestSchedule(type, fuel) {
+    const ev = fuel === 'electric', diesel = fuel === 'diesel', cng = fuel === 'cng', hybrid = fuel === 'hybrid';
+    const L = [];
+    const add = (name, km, months) => L.push({ name, kmInterval: km || null, monthInterval: months || null });
+    if (type === 'bike') {
+      if (!ev) { add('Engine oil change', 3000, 6); add('Oil filter', 6000, 12); add('Air filter', 6000, 12); add('Spark plug', 8000, 24); }
+      add('Chain clean & lube', 500, null); if (!ev) add('Chain adjust / slack check', 1000, null);
+      add('Chain & sprocket (belt/chain replace)', 20000, null);
+      add('Brake pads (inspect/replace)', 8000, 12); add('Brake fluid', null, 24);
+      if (!ev) add('Coolant (if liquid-cooled)', 24000, 24);
+      add('Tyres (inspect/replace)', 5000, 12); add('Battery check', null, 12); add('General service', ev ? 5000 : 6000, 6);
+    } else {
+      if (!ev) { add('Engine oil & filter', cng ? 5000 : 10000, 12); add('Air filter', 15000, 24); }
+      add('Cabin / AC filter', 15000, 12);
+      if (diesel) add('Fuel filter', 20000, 24);
+      if (!ev && !diesel) add('Spark plugs', 30000, 36);
+      add('Brake pads (inspect/replace)', 30000, 24); add('Brake fluid', null, 24);
+      add('Coolant', 40000, 24); add('Tyre rotation & alignment', 10000, 6); add('Tyres (replace)', 40000, 60);
+      if (!ev) add('Timing belt (if fitted)', 60000, 60);
+      if (!ev) add('Gearbox / transmission fluid', 40000, 36);
+      add('Battery check', null, 12); add('General service', 10000, 12);
+      if (hybrid) add('Hybrid system check', 20000, 12);
+    }
+    return L;
+  }
+  // -> {ok, errors[], value} ; value is a clean vehicle object
+  function normalizeVehicle(v, nowYear) {
+    v = v || {}; const errors = []; const maxY = (nowYear || new Date().getFullYear()) + 1;
+    const type = VEHICLE_TYPES[v.type] ? v.type : null; if (!type) errors.push('Choose bike or car');
+    const make = String(v.make || '').trim().slice(0, 40), model = String(v.model || '').trim().slice(0, 40);
+    if (!make) errors.push('Enter the make');
+    const yr = v.year === '' || v.year == null ? null : Number(v.year);
+    if (yr !== null && !(Number.isInteger(yr) && yr >= 1950 && yr <= maxY)) errors.push('Year must be 1950-' + maxY);
+    const odo = v.odo === '' || v.odo == null ? 0 : Number(v.odo); if (!isFinite(odo) || odo < 0 || odo > 2e6) errors.push('Odometer must be 0-2,000,000 km');
+    const fuel = type && FUELS[type].includes(v.fuel) ? v.fuel : null; if (type && !fuel) errors.push('Choose a fuel type');
+    return { ok: !errors.length, errors, value: { id: v.id, type, make, model, year: yr, odo, fuel } };
+  }
+  const vehicleName = v => v ? ([v.make, v.model].filter(Boolean).join(' ') || VEHICLE_TYPES[v.type] || 'Vehicle') + (v.year ? ' (' + v.year + ')' : '') : 'No vehicle';
+  // Odometer of a vehicle = its base reading + tracked rides assigned to it (rides with no vehicleId belong to `defaultId`).
+  function vehicleOdo(v, rides, defaultId) {
+    if (!v) return 0; const m = (rides || []).filter(r => (r.vehicleId || defaultId) === v.id).reduce((s, r) => s + (isFinite(r.dist) ? r.dist : 0), 0);
+    return (Number(v.odo) || 0) + m / 1000;
+  }
+  // Next due by km and/or date. Returns null if no interval is set.
+  function nextDue(item, odo, now) {
+    now = now == null ? Date.now() : now; const o = { dueKm: null, dueDate: null, leftKm: null, leftDays: null, by: null, text: '' };
+    if (item.kmInterval && item.lastKm != null) { o.dueKm = item.lastKm + item.kmInterval; o.leftKm = o.dueKm - odo; }
+    if (item.dayInterval && item.lastDate) { const t = new Date(item.lastDate).getTime(); if (isFinite(t)) { const d = new Date(t + item.dayInterval * 864e5); o.dueDate = d.toISOString().slice(0, 10); o.leftDays = Math.round((d.getTime() - now) / 864e5); } }
+    if (o.leftKm === null && o.leftDays === null) return null;
+    // which comes first? compare as fraction of interval used
+    const fk = o.leftKm === null ? -Infinity : (item.kmInterval - o.leftKm) / item.kmInterval, fd = o.leftDays === null ? -Infinity : (item.dayInterval - o.leftDays) / item.dayInterval;
+    o.by = fk >= fd ? 'km' : 'date';
+    o.text = o.by === 'km' ? (o.leftKm <= 0 ? Math.round(-o.leftKm) + ' km overdue (was due at ' + Math.round(o.dueKm) + ' km)' : 'due at ' + Math.round(o.dueKm) + ' km, ' + Math.round(o.leftKm) + ' km left')
+      : (o.leftDays <= 0 ? -o.leftDays + ' days overdue (was due ' + o.dueDate + ')' : 'due ' + o.dueDate + ', ' + o.leftDays + ' days left');
+    const kt = o.leftKm === null ? null : (o.leftKm <= 0 ? Math.round(-o.leftKm) + ' km overdue' : 'at ' + Math.round(o.dueKm) + ' km (' + Math.round(o.leftKm) + ' km left)');
+    const dt = o.leftDays === null ? null : (o.leftDays <= 0 ? -o.leftDays + ' days overdue' : 'on ' + o.dueDate + ' (' + o.leftDays + ' days left)');
+    o.both = [kt && 'km: ' + kt, dt && 'date: ' + dt].filter(Boolean).join(' · ');
+    return o;
+  }
+  // Mark an item done at an odometer reading and date. Returns a new item (input is not mutated).
+  function markDone(item, odo, dateIso, cost) {
+    if (!(isFinite(odo) && odo >= 0)) throw new Error('Odometer must be a positive number');
+    if (dayNum(dateIso) === null) throw new Error('Date must be YYYY-MM-DD');
+    const n = Object.assign({}, item, { lastKm: Math.round(odo), lastDate: dateIso }); if (cost != null && cost !== '' && isFinite(cost)) n.cost = Number(cost); return n;
+  }
+  // Build editable maintenance items for a vehicle from the suggestion list. Existing names (case-insensitive) are skipped.
+  function scheduleItems(vehicle, odo, todayIso, existing) {
+    const have = new Set((existing || []).map(i => String(i.name).toLowerCase()));
+    return suggestSchedule(vehicle.type, vehicle.fuel).filter(s => !have.has(s.name.toLowerCase())).map(s => ({
+      name: s.name, kmInterval: s.kmInterval, monthInterval: s.monthInterval, dayInterval: monthsToDays(s.monthInterval),
+      lastKm: Math.round(odo), lastDate: todayIso, vehicleId: vehicle.id, suggested: true }));
+  }
+  const api = { VEHICLE_TYPES, FUELS, suggestSchedule, normalizeVehicle, vehicleName, vehicleOdo, nextDue, markDone, scheduleItems, monthsToDays, daysToMonths, rideStats, gridCells, cellOf, thin, nextService, tyreStatus, TYRE_GUIDE, demoData, CELL_DEG, groupFlags, fmtAgo, fmtDist, normCode, codeFromSearch, gmapsLink, stepText, parseRoute, DOC_TYPES, docStatus, docAlerts, dayNum, toGPX, parseGPX, DEFAULT_CONTACTS, telLink, shareLocationLinks, haversine, totalDistance, acceptFix, kmh, fmtDuration, fmtKm, fmtINR, CrashDetector, alertLinks, maintStatus };
+  if (typeof module !== 'undefined') module.exports = api; else root.Core = api;
+})(typeof self !== 'undefined' ? self : this);

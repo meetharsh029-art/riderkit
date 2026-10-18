@@ -1,0 +1,17 @@
+node_modules/
+tests/
+screenshots/
+store/*
+!store/privacy-policy.html
+capacitor/
+*.apk
+*.aab
+*.keystore
+*.jks
+*.log
+.env
+.DS_Store
+# internal notes
+PLAN.md
+RESEARCH.md
+STATUS.md
