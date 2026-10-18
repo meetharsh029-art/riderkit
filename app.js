@@ -334,7 +334,7 @@ function gStart(sess) {
   gInitMap(); setTimeout(() => G.map.invalidateSize(), 50); G.fitted = false;
   gConnect(); clearInterval(G.poll); G.poll = setInterval(gPoll, 5000); clearInterval(G.send); G.send = setInterval(gSendLoc, 5000);
   if (navigator.geolocation && G.watch == null) G.watch = navigator.geolocation.watchPosition(p => { G.fix = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, speed: p.coords.speed, t: Date.now() };
-    if (G.firstFix !== true) { G.firstFix = true; gSendLoc(); } maybeRoute(); }, e => gMsg('Location unavailable: ' + e.message + '. You can still see others.'), { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+    if (G.firstFix !== true) { G.firstFix = true; gSendLoc(); } maybeRoute(); try { window.__rkOnFix && window.__rkOnFix(G.fix); } catch (e) { console.warn(e); } }, e => gMsg('Location unavailable: ' + e.message + '. You can still see others.'), { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
   try { navigator.wakeLock?.request('screen').then(w => G.wake = w).catch(() => {}); } catch {}
 }
 const CLOSE_TXT = { cancelled: 'The admin cancelled the group.', finished: 'Every rider ended their trip, so the group is finished.' };
@@ -993,7 +993,7 @@ acctInit();
 // ---------- init ----------
 applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();
-window.__rkApp = { vehicleState, showTab, getVehicles, activeVehicle, esc, get G() { return G; }, get map() { return map; } };
+window.__rkApp = { maybeRoute, vehicleState, showTab, getVehicles, activeVehicle, esc, get G() { return G; }, get map() { return map; } };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW failed', e));
 })();
 

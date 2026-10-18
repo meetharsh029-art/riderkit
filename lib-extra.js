@@ -39,6 +39,53 @@
   const mergePinCache = (cache, pins, now, max) => { const m = Object.assign({}, cache); for (const p of pins) m[p.id] = Object.assign({ seenAt: now }, p, { seenAt: now }); const live = Object.values(m).filter(p => p.exp > now).sort((a, b) => b.seenAt - a.seenAt).slice(0, max || 400); return Object.fromEntries(live.map(p => [p.id, p])); };
   const newDeviceId = () => { const a = new Uint8Array(16); (typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto : require('crypto').webcrypto).getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); };
 
-  const api = { PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
+  // ===== Stage 3: navigation (off-route detection, auto re-route, voice prompts) =====
+  const RAD = Math.PI / 180, R_EARTH = 6371008.8;
+  const hav = (a, b) => { const dl = (b[0] - a[0]) * RAD, dn = (b[1] - a[1]) * RAD, h = Math.sin(dl / 2) ** 2 + Math.cos(a[0] * RAD) * Math.cos(b[0] * RAD) * Math.sin(dn / 2) ** 2; return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(h))); };
+  // nearest point on a polyline [[lat,lng],...]: {dist metres, along metres from start, seg}
+  function project(pt, line, cum) {
+    let best = { dist: Infinity, along: 0, seg: 0 }; if (!line || line.length < 2) return line && line.length === 1 ? { dist: hav(pt, line[0]), along: 0, seg: 0 } : best;
+    const k = Math.cos(pt[0] * RAD) * 111320, ky = 110574;
+    for (let i = 0; i < line.length - 1; i++) {
+      const ax = (line[i][1] - pt[1]) * k, ay = (line[i][0] - pt[0]) * ky, bx = (line[i + 1][1] - pt[1]) * k, by = (line[i + 1][0] - pt[0]) * ky, dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      let u = l2 > 0 ? -(ax * dx + ay * dy) / l2 : 0; u = Math.max(0, Math.min(1, u)); const px = ax + u * dx, py = ay + u * dy, d = Math.hypot(px, py);
+      if (d < best.dist) best = { dist: d, along: cum[i] + u * (cum[i + 1] - cum[i]), seg: i };
+    } return best;
+  }
+  function buildNav(route) { // route = Core.parseRoute() output: {line, steps:[{text,dist,lat,lng}], distance, duration}
+    const line = (route && route.line) || [], cum = [0]; for (let i = 1; i < line.length; i++) cum.push(cum[i - 1] + hav(line[i - 1], line[i]));
+    const total = cum[cum.length - 1] || 0; let last = 0;
+    const steps = ((route && route.steps) || []).map((s, i, a) => { let along = i === a.length - 1 ? total : (s.lat != null ? project([s.lat, s.lng], line, cum).along : null); if (along == null) along = last; along = Math.max(last, along); last = along; return { text: s.text, dist: s.dist, along }; });
+    return { line, cum, total, steps };
+  }
+  const lcFirst = t => t ? t.charAt(0).toLowerCase() + t.slice(1) : t;
+  const metresSay = m => m >= 1000 ? (Math.round(m / 100) / 10) + ' kilometres' : Math.max(50, Math.round(m / 50) * 50) + ' metres';
+  const NAV = { offMin: 60, offMax: 150, offFixes: 3, offMs: 10000, cooldownMs: 25000, maxReroutes: 6, windowMs: 600000, bands: [500, 150, 30], arriveM: 40, passM: 20 };
+  const newNavState = () => ({ spoken: {}, offCount: 0, offSince: null, rerouteAt: [], arrived: false, started: false });
+  // One GPS fix -> what to show/say/do. fix = {lat,lng,acc,speed(m/s)|null}. Pure except it mutates `st`.
+  function navUpdate(nav, st, fix, now) {
+    const out = { off: false, dist: null, along: null, next: null, say: [], reroute: false, arrived: false, remaining: null };
+    if (!nav || nav.line.length < 2) return out; now = now == null ? Date.now() : now;
+    const pr = project([fix.lat, fix.lng], nav.line, nav.cum); out.dist = pr.dist; out.along = pr.along; out.remaining = Math.max(0, nav.total - pr.along);
+    const thr = Math.max(NAV.offMin, Math.min(NAV.offMax, 40 + (fix.acc || 0)));
+    if (pr.dist > thr) { st.offCount++; if (st.offSince == null) st.offSince = now; } else { st.offCount = 0; st.offSince = null; }
+    out.off = st.offCount >= NAV.offFixes && now - st.offSince >= NAV.offMs;
+    if (out.off) { st.rerouteAt = st.rerouteAt.filter(t => now - t < NAV.windowMs); const moving = fix.speed == null || fix.speed >= 1;
+      if (moving && st.rerouteAt.length < NAV.maxReroutes && (!st.rerouteAt.length || now - st.rerouteAt[st.rerouteAt.length - 1] >= NAV.cooldownMs)) { out.reroute = true; st.rerouteAt.push(now); } return out; }
+    if (st.offCount > 0) return out; // briefly off, wait before speaking nonsense
+    if (st.arrived) { out.arrived = true; return out; }
+    if (nav.total - pr.along <= NAV.arriveM && pr.dist <= thr) { st.arrived = true; out.arrived = true; out.say.push('You have arrived at your destination'); return out; }
+    if (!st.started) { st.started = true; const s0 = nav.steps[0]; if (s0 && pr.along < 100) out.say.push('Starting navigation. ' + s0.text); }
+    let idx = nav.steps.findIndex((s, i) => i > 0 && s.along - pr.along > -NAV.passM); if (idx < 0) idx = nav.steps.length - 1;
+    const s = nav.steps[idx]; if (s) { const d = Math.max(0, s.along - pr.along); out.next = { idx, text: s.text, dist: d };
+      if (idx < nav.steps.length - 1 || d > NAV.arriveM) { // last step is "arrive", handled above
+        let band = null; for (const b of NAV.bands) if (d <= b) band = b; // smallest band we are inside
+        if (band !== null) { const key = idx + '@' + band; if (!st.spoken[key]) { for (const b of NAV.bands) if (b >= band) st.spoken[idx + '@' + b] = 1; // never repeat bigger bands after a smaller one
+          out.say.push(band === NAV.bands[NAV.bands.length - 1] ? s.text : 'In ' + metresSay(Math.min(d, band)) + ', ' + lcFirst(s.text)); } } } }
+    return out;
+  }
+  const navKeyOf = route => route ? Math.round(route.distance) + ':' + route.line.length : '';
+
+  const api = { hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
   if (typeof module !== 'undefined') module.exports = api; else root.Extra = api;
 })(typeof self !== 'undefined' ? self : this);

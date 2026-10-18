@@ -110,5 +110,26 @@ async function pinAdd(lat, lng) { const type = $('pinType').value; $('pinAddMsg'
   $('pinAddMsg').textContent = r.merged ? 'A matching pin was already here, so your add counted as "still there".' : 'Pin added. It stays for ' + (X.PIN_TYPES[type].hazard ? '14 days' : 'about 6 months') + ' unless riders confirm or remove it.'; pinSelect(r.pin.id); }
 window.__rkPins = PN;
 window.__rkOnTab.push(name => { if (name === 'pins') pinInit(); });
+
+// ===== Stage 3: auto re-route + voice turn prompts (group route; Web Speech API speechSynthesis) =====
+const NV = { nav: null, key: '', st: X.newNavState(), voice: localStorage.getItem('rk-nav-voice') !== '0', lastSay: 0, rerouting: false, spoken: [] };
+const canSpeak = () => 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+function say(text) { NV.spoken.push(text); if (NV.spoken.length > 50) NV.spoken.shift(); window.__rkLastSpeech = text; if (!NV.voice || !canSpeak()) return false;
+  try { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-IN'; u.rate = 1; u.volume = 1; speechSynthesis.speak(u); return true; } catch { return false; } }
+function navInit() { const cb = $('navVoice'); if (!cb) return; cb.checked = NV.voice && canSpeak(); cb.disabled = !canSpeak();
+  $('navNote').textContent = canSpeak() ? 'Spoken prompts use your phone\'s text-to-speech and need the screen on and RiderKit open. Auto re-route asks the OSRM demo server for a new route when you leave the route (at most once per 25 s, 6 per 10 min).' : 'This browser has no speech synthesis, so turn prompts are shown on screen only.';
+  cb.onchange = () => { NV.voice = cb.checked; localStorage.setItem('rk-nav-voice', cb.checked ? '1' : '0'); }; $('navTest').onclick = () => { const ok = say('Voice prompts are on. In 200 metres, turn left.'); if (!ok) toast(canSpeak() ? 'Voice prompts are switched off.' : 'This device cannot speak prompts.'); }; }
+function navRender(o) { const card = $('navCard'), G = A.G; if (!card) return; if (!NV.nav || !G.sess) { card.hidden = true; return; } card.hidden = false;
+  let main = '', sub = ''; if (NV.rerouting) { main = 'Re-routing...'; sub = 'You left the route.'; } else if (o && o.arrived) { main = 'You have arrived'; } else if (o && o.off) { main = 'Off route'; sub = 'Looking for a new route. Use "Route from my location" if this persists.'; }
+  else if (o && o.next) { main = (o.next.dist >= 1000 ? (o.next.dist / 1000).toFixed(1) + ' km' : Math.round(o.next.dist / 10) * 10 + ' m') + ': ' + o.next.text; sub = o.remaining != null ? Core.fmtDist(o.remaining) + ' to go' : ''; }
+  card.classList.toggle('off', !!(NV.rerouting || (o && o.off))); $('navBanner').textContent = main; $('navSub').textContent = sub; }
+async function onFix(fix) { const G = A.G; if (!fix || !G.sess || !G.route) { if (NV.nav) { NV.nav = null; NV.key = ''; } navRender(); return; }
+  const key = X.navKeyOf(G.route); if (key !== NV.key) { NV.nav = X.buildNav(G.route); NV.key = key; NV.st = X.newNavState(); NV.rerouting = false; }
+  const o = X.navUpdate(NV.nav, NV.st, { lat: fix.lat, lng: fix.lng, acc: fix.acc, speed: fix.speed }, Date.now()); window.__rkNav = o;
+  o.say.forEach(t => say(t)); navRender(o);
+  if (o.reroute && !NV.rerouting) { NV.rerouting = true; say('Re-routing'); navRender(o); try { await A.maybeRoute(true); } catch {} setTimeout(() => { NV.rerouting = false; }, 4000); } }
+setInterval(() => { const G = A.G; if (G.sess && G.route && G.fix && X.navKeyOf(G.route) !== NV.key) onFix(G.fix); }, 1500); // new route (set destination / re-route): initialise without waiting for the next GPS fix
+window.__rkOnFix = onFix; window.__rkNavState = NV;
+window.__rkOnTab.push(name => { if (name === 'group') navInit(); }); setTimeout(navInit, 500);
 //__STAGES__
 })();

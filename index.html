@@ -276,6 +276,8 @@
         <div class="item"><div><svg class="ic"><use href="#i-flag"/></svg> <b id="gDestName"></b><br><small id="gDestBy"></small></div></div>
         <div class="row"><button id="gRoute" class="primary small">Route from my location</button><a id="gGmaps" class="btn call" target="_blank" rel="noopener">Open in Google Maps</a></div>
         <button id="gDestClear" class="ghost small">Clear destination</button>
+        <div id="navCard" class="navcard" hidden aria-live="polite"><div id="navBanner"></div><div id="navSub" class="hint"></div></div>
+        <div class="row"><label class="chk"><input type="checkbox" id="navVoice"> Voice turn prompts</label><button id="navTest" class="small" type="button">Test voice</button></div><small id="navNote" class="hint"></small>
         <div id="gRouteInfo"></div><ol id="gSteps" class="steps"></ol>
         <small class="hint">Routes: OSRM public demo server (car profile, best effort, ~1 request/s, not for heavy use). Places: Nominatim. © OpenStreetMap contributors.</small>
       </div>
