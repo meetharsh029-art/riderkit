@@ -35,3 +35,11 @@ curl https://<service>.onrender.com/api/health   # {"ok":true,...}
 - `TRUST_PROXY` defaults to on when `NODE_ENV=production`; set `TRUST_PROXY=0` to disable. It makes rate limiting use `X-Forwarded-For`.
 - Privacy policy is served at `/store/privacy-policy.html`.
 - Env (optional): `GROUP_EMPTY_TTL_MS` (default 7 days: memory cleanup of groups with zero members), `GROUP_ABANDONED_MS` (default off: drop groups whose members are all unseen that long). Groups never expire while a rider is still on their trip; they close when the admin cancels or every rider ends their trip.
+
+
+## Feedback reports
+- `POST /api/feedback` (rate limited 5 / 10 min / IP, 8 KB body, 2000 char message, whitelist + sanitising) appends one JSON line per report to `FEEDBACK_FILE` (default: `<os tmpdir>/riderkit-feedback.jsonl`, capped ~5 MB).
+- **Render free storage is ephemeral**: the file is wiped on every deploy, restart and spin-down. Read reports regularly, or attach a persistent disk (paid) and set `FEEDBACK_FILE` to it.
+- Read them: set the `ADMIN_TOKEN` env var in Render (long random string; render.yaml declares it with `sync: false`), then
+  `curl -H "Authorization: Bearer $ADMIN_TOKEN" https://riderkit.onrender.com/api/feedback` (optional `?limit=N`, newest first). Without ADMIN_TOKEN the endpoint returns 404 for GET.
+- Collected: type, message, optional contact, app version, user-agent, platform, language, screen size, standalone/online flags. No location, no IP stored.

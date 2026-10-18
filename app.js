@@ -31,7 +31,8 @@ window.__rk = { getAll, put, del, kvGet, kvSet }; // exposed for tests/debug
 
 // ---------- icons + tabs ----------
 const ico = (n, c) => `<svg class="ic ${c || ''}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
-const MORE = ['weather', 'fuel', 'docs', 'help', 'group', 'me'];
+const APP_VERSION = 'v8';
+const MORE = ['weather', 'fuel', 'docs', 'help', 'group', 'feedback', 'me'];
 let curTab = 'home';
 function showTab(name) {
   curTab = name;
@@ -835,6 +836,35 @@ function applyTheme(t, persist) {
 }
 $('themeBtn').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
 $('themeDark').onchange = e => applyTheme(e.target.checked ? 'dark' : 'light', true);
+// ---------- feedback (queued offline, retried) ----------
+let fbBusy = false;
+async function fbUpdQueued() { const q = (await kvGet('fbQueue')) || []; const el = $('fbQueued'); el.hidden = !q.length; el.textContent = q.length ? q.length + ' report' + (q.length > 1 ? 's' : '') + ' waiting to send (will retry automatically).' : ''; return q; }
+async function fbFlush() {
+  if (fbBusy) return; fbBusy = true; let sent = 0;
+  try {
+    let q = (await kvGet('fbQueue')) || [];
+    while (q.length) {
+      let st = 0; try { st = (await fetch('/api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(q[0]) })).status; } catch { st = 0; }
+      if (st >= 200 && st < 300) { sent++; q = q.slice(1); await kvSet('fbQueue', q); }
+      else if (C.fbShouldRetry(st)) break;
+      else { q = q.slice(1); await kvSet('fbQueue', q); } // rejected for good (400/413...): drop
+    }
+  } finally { fbBusy = false; }
+  await fbUpdQueued(); return sent;
+}
+$('fbForm').onsubmit = async e => {
+  e.preventDefault(); const out = $('fbMsgOut');
+  const env = { ver: APP_VERSION, ua: navigator.userAgent, platform: navigator.platform || '', lang: navigator.language || '', screen: screen.width + 'x' + screen.height, standalone: matchMedia('(display-mode: standalone)').matches, online: navigator.onLine };
+  const r = C.buildFeedback($('fbType').value, $('fbMsg').value, $('fbContact').value, env);
+  if (r.error) { out.textContent = r.error; return; }
+  await kvSet('fbQueue', C.fbQueueAdd(await kvGet('fbQueue'), r.value));
+  $('fbMsg').value = ''; out.textContent = 'Sending…'; await fbUpdQueued();
+  await fbFlush(); const left = ((await kvGet('fbQueue')) || []).length;
+  out.textContent = left ? 'Saved on this device. It will be sent when you are online.' : 'Thank you! Your feedback was sent.';
+};
+addEventListener('online', () => { fbFlush(); });
+setTimeout(() => { fbUpdQueued(); if (navigator.onLine) fbFlush(); }, 3000);
+
 // ---------- init ----------
 applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();

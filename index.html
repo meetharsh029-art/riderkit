@@ -66,6 +66,7 @@
       <div class="hero-side">
         <div id="hMilestone" class="hint"></div>
         <button id="homeStart" class="primary big"><svg class="ic"><use href="#i-ride"/></svg><span id="homeStartTxt">Start ride</span></button>
+        <button id="homeGroup" class="ghost big" type="button" data-go="group"><svg class="ic"><use href="#i-group"/></svg>Start group ride</button>
       </div>
     </div>
     <div id="homeEmpty" class="glass empty" hidden>
@@ -226,6 +227,21 @@
     <button id="contactReset" class="ghost small">Restore default contacts</button>
   </section>
 
+  <section id="tab-feedback" class="tab">
+    <h2 class="h-title"><svg class="ic lg"><use href="#i-help"/></svg>Report a bug / send feedback</h2>
+    <form id="fbForm" class="glass card" novalidate>
+      <label for="fbType">Type</label>
+      <select id="fbType"><option value="bug">Bug</option><option value="idea">Idea</option><option value="other">Other</option></select>
+      <label for="fbMsg">Message</label>
+      <textarea id="fbMsg" rows="5" maxlength="2000" placeholder="What happened, or what would you like?"></textarea>
+      <label for="fbContact">Contact (optional)</label>
+      <input id="fbContact" type="text" maxlength="200" placeholder="Email or phone, only if you want a reply" autocomplete="off">
+      <small class="hint">Sent automatically with your report: app version, device/browser info (browser name, platform, language, screen size). <b>Your location is never included.</b> Reports you send while offline are kept on this device and sent when you are back online.</small>
+      <button id="fbSend" class="primary big" type="submit">Send feedback</button>
+      <div id="fbMsgOut" class="hint" role="status" aria-live="polite"></div>
+      <div id="fbQueued" class="hint" hidden></div>
+    </form>
+  </section>
   <section id="tab-group" class="tab">
     <h2 class="h-title"><svg class="ic lg"><use href="#i-group"/></svg>Group ride <span class="badge">LIVE</span></h2>
     <div id="gSetup">
@@ -358,6 +374,7 @@
   <button data-tab="docs" role="menuitem"><svg class="ic"><use href="#i-doc"/></svg>Docs</button>
   <button data-tab="help" role="menuitem"><svg class="ic"><use href="#i-help"/></svg>Help</button>
   <button data-tab="group" role="menuitem"><svg class="ic"><use href="#i-group"/></svg>Group</button>
+  <button data-tab="feedback" role="menuitem"><svg class="ic"><use href="#i-help"/></svg>Feedback</button>
   <button data-tab="me" role="menuitem"><svg class="ic"><use href="#i-sos"/></svg>SOS</button>
 </div>
 <nav aria-label="Main">

@@ -1,4 +1,4 @@
-const V = 'riderkit-v7';
+const V = 'riderkit-v8';
 const ASSETS = ['./','index.html','styles.css','app.js','lib-core.js','manifest.webmanifest','vendor/leaflet.js','vendor/leaflet.css',
   'vendor/images/marker-icon.png','vendor/images/marker-icon-2x.png','vendor/images/marker-shadow.png','vendor/images/layers.png','icons/icon.svg','icons/icon-192.png','icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())); });

@@ -3,6 +3,7 @@
 // Env: PORT (8080), TRUST_PROXY=1|0 (defaults to 1 when NODE_ENV=production; use X-Forwarded-For for rate limiting, only behind a trusted tunnel/proxy).
 const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
+const { sanitize, FeedbackStore, safeEq } = require('./feedback');
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 const STATIC_BLOCK = /^\/(server|tests|capacitor|node_modules)(\/|$)|^\/store(\/(?!privacy-policy\.html$)|$)|^\/\.|\.md$/i;
@@ -11,12 +12,14 @@ function createServer(opts = {}) {
   const store = new GroupStore(opts.store || { emptyTtlMs: +process.env.GROUP_EMPTY_TTL_MS || undefined, abandonedTtlMs: +process.env.GROUP_ABANDONED_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
   const lim = new Limiter(opts.now);
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
-  const L = Object.assign({ global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], lifecycle: [10, 60e3] }, opts.limits);
+  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], lifecycle: [10, 60e3] }, opts.limits);
+  const fb = new FeedbackStore(opts.feedbackFile, opts.feedbackMaxBytes);
+  const adminToken = () => opts.adminToken !== undefined ? opts.adminToken : process.env.ADMIN_TOKEN || '';
   const ipOf = req => (trust && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
   const json = (res, status, obj) => { const b = JSON.stringify(obj); res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(b); };
-  const body = req => new Promise((ok, bad) => { let n = 0; const ch = [];
-    req.on('data', c => { n += c.length; if (n <= 4096) ch.push(c); });
-    req.on('end', () => { if (n > 4096) return bad(new HttpError(413, 'body too large')); if (!ch.length) return ok({}); try { const o = JSON.parse(Buffer.concat(ch)); ok(o && typeof o === 'object' ? o : {}); } catch { bad(new HttpError(400, 'bad json')); } });
+  const body = (req, max = 4096) => new Promise((ok, bad) => { let n = 0; const ch = [];
+    req.on('data', c => { n += c.length; if (n <= max) ch.push(c); });
+    req.on('end', () => { if (n > max) return bad(new HttpError(413, 'body too large')); if (!ch.length) return ok({}); try { const o = JSON.parse(Buffer.concat(ch)); ok(o && typeof o === 'object' ? o : {}); } catch { bad(new HttpError(400, 'bad json')); } });
     req.on('error', bad); });
   const limit = (ok, msg = 'rate limit exceeded') => { if (!ok) throw new HttpError(429, msg); };
 
@@ -26,6 +29,22 @@ function createServer(opts = {}) {
     const parts = url.pathname.split('/').filter(Boolean).slice(1); // after 'api'
     const q = url.searchParams;
     if (req.method === 'GET' && parts[0] === 'health') return json(res, 200, { ok: true, groups: store.groups.size });
+    if (parts[0] === 'feedback') {
+      if (req.method === 'POST') {
+        limit(lim.hit('fb:' + ip, ...L.feedback), 'too many reports, try again later');
+        const r = sanitize(await body(req, 8192)); if (r.error) throw new HttpError(400, r.error);
+        const rec = fb.add(r.value); if (!rec) throw new HttpError(507, 'feedback inbox is full');
+        return json(res, 201, { ok: true, id: rec.id });
+      }
+      if (req.method === 'GET') {
+        const tok = adminToken(); if (!tok) throw new HttpError(404, 'not found'); // disabled unless ADMIN_TOKEN is set
+        limit(lim.count('fba:' + ip, 600e3) < 10, 'too many attempts');
+        const h = String(req.headers.authorization || ''); const given = h.startsWith('Bearer ') ? h.slice(7) : String(req.headers['x-admin-token'] || '');
+        if (!given || !safeEq(given, tok)) { lim.hit('fba:' + ip, 10, 600e3); throw new HttpError(401, 'unauthorized'); }
+        const items = fb.list(Math.min(+q.get('limit') || 200, 1000)); return json(res, 200, { count: items.length, items });
+      }
+      throw new HttpError(405, 'method not allowed');
+    }
     if (parts[0] !== 'groups') throw new HttpError(404, 'not found');
     if (parts.length === 1 && req.method === 'POST') {
       limit(lim.hit('c:' + ip, ...L.create), 'too many groups created, slow down');

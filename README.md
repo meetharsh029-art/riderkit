@@ -39,3 +39,7 @@ Theme: light by default, dark via the header button (`localStorage rk-theme`). `
 
 ### Group lifecycle
 Groups stay open while any rider is on their trip. They close when the admin cancels or all riders end their trip. See STATUS.md.
+
+
+## Feedback
+More → Feedback: bug / idea / other + message + optional contact. Auto-attaches app version and device/browser info (never location). Queued offline in IndexedDB and retried. Server: `POST /api/feedback`, owner reads via `GET /api/feedback` with `ADMIN_TOKEN` (see DEPLOY.md; Render free disk is ephemeral).
