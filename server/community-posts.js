@@ -65,7 +65,7 @@ P.autoFlag = async function (kind, key, owner, note, snap) { const id = this.tke
 P.getPost = async function (viewerId, id, any) { const post = await this.kv.get('cpost', String(id)); if (!post || !(any || await this.canView(viewerId, post))) throw new HttpError(404, 'post not found'); return post; };
 P.deletePost = async function (post) {
   for (const id of [post.card, ...(post.photos || [])].filter(Boolean)) await this.dropImage(id);
-  for (const [k] of await this.kv.range('ccmt', { prefix: post.id + ':', limit: 5000 })) await this.kv.del('ccmt', k); for (const [k] of await this.kv.range('clike', { prefix: post.id + ':', limit: 20000 })) { await this.kv.del('clike', k); await this.kv.del('clikeu', k.split(':')[1] + ':' + post.id); }
+  for (const [k, cm] of await this.kv.range('ccmt', { prefix: post.id + ':', limit: 5000 })) { await this.kv.del('ccmt', k); if (cm) await this.kv.del('ccmtu', cm.author + ':' + k); } for (const [k] of await this.kv.range('clike', { prefix: post.id + ':', limit: 20000 })) { await this.kv.del('clike', k); await this.kv.del('clikeu', k.split(':')[1] + ':' + post.id); }
   for (const [k, rid] of await this.kv.range('crept', { prefix: 'post:' + post.id + ':', limit: 200 })) { const r = await this.kv.get('crep', rid); if (r) { if (r.state === 'open') { r.state = 'actioned'; r.action = 'removed'; } r.snap = null; r.note = ''; await this.kv.set('crep', rid, r); } } 
   await this.kv.del('cpost', post.id); await this.kv.del('cupost', post.author + ':' + post.id); if (post.club) await this.kv.del('cclubpost', post.club + ':' + post.id);
   await this.lock('prof:' + post.author, async () => { const p = await this.prof(post.author); if (p && p.counts.posts > 0) { p.counts.posts--; await this.kv.set('cprof', post.author, p); } }); };
@@ -105,7 +105,7 @@ P.postRoutes = async function (req, res, url, parts, mm, { body, rawBody, json }
   const [a, b, c] = parts, q = url.searchParams, GET = req.method === 'GET', POST = req.method === 'POST', { user, prof, ip } = mm;
   if (POST && a === 'upload') { this.canWrite(prof); this.needImages(); const ct = String(req.headers['content-type'] || ''); const buf = await rawBody(req, (this.imgMax || 1e6) + 1024).catch(e => { throw e.status === 413 ? new HttpError(413, 'image too large (max ' + Math.round((this.imgMax || 1e6) / 1000) + ' KB after the app shrinks it)') : e; }); return json(res, 201, await this.upload(user, prof, buf, ct, q.get('kind') || 'photo', ip)); }
   if (POST && a === 'posts' && !b) return json(res, 201, await this.createPost(user, prof, await body(req, 4096), ip));
-  if (GET && a === 'posts' && b) return json(res, 200, { post: await this.postView(user.id, await this.getPost(user.id, b)) });
+  if (GET && a === 'posts' && b && !c) return json(res, 200, { post: await this.postView(user.id, await this.getPost(user.id, b)) });
   if (POST && a === 'posts' && b && c === 'delete') { return json(res, 200, await this.removeOwnPost(user, b)); }
   if (GET && a === 'feed') return json(res, 200, await this.feed(user, { scope: q.get('scope') || 'global', cursor: q.get('before'), limit: q.get('limit'), club: q.get('club'), handle: q.get('handle') }));
   return undefined; };

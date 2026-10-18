@@ -5,7 +5,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
 const { sanitize, FeedbackStore, safeEq } = require('./feedback');
 const { PushService } = require('./push'), { PinStore, PinError, TYPES: PIN_TYPES } = require('./pins'), { LiveStore, LiveError } = require('./live');
-const { Community } = require('./community'); require('./community-posts'); const { makeCommunityApi } = require('./community-api');
+const { Community } = require('./community'); require('./community-posts'); require('./community-social'); require('./community-comments'); const { makeCommunityApi } = require('./community-api');
 const { Accounts } = require('./auth'), { openKV } = require('./kv'), { makeMailer } = require('./mailer'), { makeSms } = require('./sms');
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };

@@ -19,7 +19,7 @@
   const fmtAgo = t => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? 'now' : s < 3600 ? Math.floor(s / 60) + 'm' : s < 86400 ? Math.floor(s / 3600) + 'h' : Math.floor(s / 86400) + 'd'; }; CM.ago = fmtAgo;
   const AV = { helmet: '\u26d1', bike: '\ud83c\udfcd', scooter: '\ud83d\udef5', car: '\ud83d\ude97', mountain: '\u26f0', road: '\ud83d\udee3', flag: '\ud83c\udfc1', bolt: '\u26a1', compass: '\ud83e\udded', wrench: '\ud83d\udd27', sun: '\u2600', moon: '\ud83c\udf19' };
   const avatar = (a, big) => h('span', { class: 'cm-av' + (big ? ' big' : ''), 'aria-hidden': 'true' }, AV[a] || AV.helmet); CM.avatar = avatar;
-  function toast(m, bad) { CM.msg = m; const t = document.getElementById('cmToast'); if (t) { t.textContent = m; t.className = 'cm-toast' + (bad ? ' bad' : ''); t.hidden = !m; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 5000); } } CM.toast = toast;
+  function toast(m, bad) { CM.msg = m; const ms = document.querySelectorAll('.cm-mtoast'), t = ms.length ? ms[ms.length - 1] : document.getElementById('cmToast'); if (t) { t.textContent = m; t.className = 'cm-toast' + (t.classList.contains('cm-mtoast') ? ' cm-mtoast' : '') + (bad ? ' bad' : ''); t.hidden = !m; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 5000); } } CM.toast = toast;
   const run = async (fn, okMsg) => { try { const r = await fn(); if (okMsg) toast(okMsg); return r; } catch (e) { toast(e.message, true); if (e.status === 401) { CM.me = null; } return undefined; } }; CM.run = run;
 
   // ---- report dialog (every post, comment, profile, club, message)

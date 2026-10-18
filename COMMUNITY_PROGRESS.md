@@ -20,3 +20,9 @@ Deploy flow: edit /workspace/rider-app, run /workspace/sync-riderkit.sh (copies 
 - Client: composer (downscale to 1600 px, JPEG re-encode = EXIF dropped, magic-byte check, thumbnails, location/plate warning), feed with report/block/delete, "Post to community" button inside the recap dialog.
 - Free image store research (checked 19 Oct 2026): Cloudflare R2 needs a payment method on file even for the free tier (10 GB) -> NOT card-free. **Backblaze B2: first 10 GB free, sign-up page says "No credit card required", S3-compatible, bucket stays private** (recommended). Supabase Storage free: 1 GB, 50 MB max file, S3-compatible, no card, but the free project pauses after 1 week of inactivity (also used as DB it would pause the community) -> second choice. 
 - Tests: `community.images.test.js` (10), `community.posts.test.js` (11), e2e extended (27 checks). SW cache `riderkit-v21`.
+
+## Stage 3+4 — follow, likes, comments (SW v22)
+- Server: `server/community-social.js` (follow graph with requests for private profiles, followers/following lists, idempotent likes with per-post serialized counters, deletion cascade fixing other people's counters, export) and `server/community-comments.js` (flat comments, 300 chars, no links/e-mail/phones, cap 200/post, held-for-review on spam words, 3 reports hide, admin remove/restore, post owner can delete any comment, block filtering both ways, cascade on post and account deletion).
+- Client: `community-social.js` (like + comments inline on every post, tap an author for the profile sheet with Follow/Message/Report/Block and their posts, followers/following lists, People tab with follow requests and a badge).
+- Tests: `tests/community.social.test.js` (12) on memory/file/pg-mem/real Postgres; e2e.community.js now 37 checks.
+- Fixed: `GET posts/:id/comments` was shadowed by the post route.
