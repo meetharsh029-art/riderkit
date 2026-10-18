@@ -133,6 +133,50 @@
     const cols = [['TIME', m.time], ['AVG', m.avg + ' km/h'], ['MAX', m.max + ' km/h']]; cols.forEach((c, i) => { const x = W / 6 + i * W / 3; ctx.fillStyle = '#93c5fd'; ctx.font = '600 32px ' + F; ctx.fillText(c[0], x, 1205); ctx.fillStyle = '#fff'; ctx.font = '700 46px ' + F; ctx.fillText(c[1], x, 1262); });
     ctx.fillStyle = '#94a3b8'; ctx.font = '500 28px ' + F; ctx.fillText(m.note ? m.note + ' \u00b7 riderkit.onrender.com' : 'riderkit.onrender.com', W / 2, 1316); }
 
-  const api = { RECAP, recapModel, drawRecap, parseRupees, fmtPaise, shares, balances, settleUp, STOP_LABEL, TILE, parseMaxAge, tileTtl, tileFresh, tileEvict, isTileUrl, hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
+  // ---- automatic SOS detector (crash + optional long stationary). Pure logic: feed it motion + speed samples. ----
+  // Inputs: feedMotion({t ms, mag m/s2 incl. gravity}), feedSpeed({t ms, mps}), tick(t). Each returns null or {kind:'crash'|'stationary', reason}.
+  // Crash = (impact peak >= impact OR speed drop >= decelMps2 * dt) while the rider was above minSpeed shortly before, FOLLOWED by a stop (speed <= stopSpeed for stopMs; motion-still when no fresh GPS speed).
+  const AUTOSOS = { impact: 30, g: 9.81, minSpeedMps: 5.5, speedAgeMs: 6000, decelMps2: 8, decelMinDrop: 8, stopSpeed: 1.5, stopMs: 3000, stillTol: 1.5, windowMs: 15000, cooldownMs: 60000, stationary: false, stationaryMs: 600000, gpsStaleMs: 60000, moveMps: 2.5 };
+  class AutoSos {
+    constructor(o) { this.o = Object.assign({}, AUTOSOS, o || {}); this.reset(); }
+    reset() { this.hist = []; this.cand = null; this.stopSince = null; this.stillSince = null; this.lastMoveT = null; this.moved = false; this.statFired = false; this.coolUntil = 0; this.lastSpeed = null; this.lastSpeedT = null; }
+    recentMax(t) { let m = 0; for (const h of this.hist) if (t - h.t <= this.o.speedAgeMs && h.mps > m) m = h.mps; return m; }
+    fire(t, kind, reason) { this.coolUntil = t + this.o.cooldownMs; this.cand = null; this.stopSince = null; this.stillSince = null; if (kind === 'stationary') this.statFired = true; return { kind, reason }; }
+    feedMotion(s) {
+      const o = this.o; if (s.t < this.coolUntil) return null;
+      if (!this.cand) { if (s.mag >= o.impact && this.recentMax(s.t) >= o.minSpeedMps) { this.cand = { t: s.t, why: 'impact of ' + (s.mag / o.g).toFixed(1) + ' g' }; this.stopSince = null; this.stillSince = null; } return null; }
+      if (s.t - this.cand.t < 500) return null;
+      if (Math.abs(s.mag - o.g) <= o.stillTol) { if (this.stillSince === null) this.stillSince = s.t; } else this.stillSince = null;
+      return this.check(s.t);
+    }
+    feedSpeed(s) {
+      const o = this.o, t = s.t; if (s.mps == null || !(s.mps >= 0)) return null;
+      this.lastSpeed = s.mps; this.lastSpeedT = t;
+      if (s.mps >= o.moveMps) { this.lastMoveT = t; this.moved = true; if (s.mps >= o.minSpeedMps) this.statFired = false; }
+      if (t >= this.coolUntil && !this.cand && s.mps <= o.stopSpeed) { // sudden deceleration from riding speed
+        for (const h of this.hist) { const dt = (t - h.t) / 1000; if (dt >= 0.5 && dt <= 4 && h.mps >= o.minSpeedMps && h.mps - s.mps >= o.decelMinDrop && (h.mps - s.mps) / dt >= o.decelMps2) { this.cand = { t, why: 'speed fell ' + Math.round(h.mps * 3.6) + ' to ' + Math.round(s.mps * 3.6) + ' km/h in ' + dt.toFixed(1) + ' s' }; this.stopSince = t; break; } }
+      }
+      this.hist.push({ t, mps: s.mps }); this.hist = this.hist.filter(h => t - h.t <= 10000);
+      if (this.cand) { if (s.mps <= o.stopSpeed) { if (this.stopSince === null) this.stopSince = t; } else this.stopSince = null; }
+      return this.check(t);
+    }
+    tick(t) { return this.check(t); }
+    check(t) {
+      const o = this.o;
+      if (this.cand) {
+        if (t - this.cand.t > o.windowMs + o.stopMs) { this.cand = null; this.stopSince = null; this.stillSince = null; }
+        else {
+          const gpsFresh = this.lastSpeedT != null && t - this.lastSpeedT <= o.speedAgeMs;
+          if (gpsFresh) { if (this.stopSince !== null && t - this.stopSince >= o.stopMs && this.lastSpeed <= o.stopSpeed) return this.fire(t, 'crash', this.cand.why + ', then stopped'); }
+          else if (this.stillSince !== null && t - this.stillSince >= o.stopMs) return this.fire(t, 'crash', this.cand.why + ', then no movement');
+        }
+      }
+      if (o.stationary && this.moved && !this.statFired && t >= this.coolUntil && this.lastSpeedT != null && t - this.lastSpeedT <= o.gpsStaleMs && this.lastSpeed <= o.stopSpeed && this.lastMoveT != null && t - this.lastMoveT >= o.stationaryMs)
+        return this.fire(t, 'stationary', 'not moving for ' + Math.round((t - this.lastMoveT) / 60000) + ' min during a ride');
+      return null;
+    }
+  }
+
+  const api = { AutoSos, AUTOSOS, RECAP, recapModel, drawRecap, parseRupees, fmtPaise, shares, balances, settleUp, STOP_LABEL, TILE, parseMaxAge, tileTtl, tileFresh, tileEvict, isTileUrl, hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
   if (typeof module !== 'undefined') module.exports = api; else root.Extra = api;
 })(typeof self !== 'undefined' ? self : this);

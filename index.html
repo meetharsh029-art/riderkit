@@ -144,9 +144,12 @@
       <button id="btnStart" class="primary big"><svg class="ic"><use href="#i-ride"/></svg>Start ride</button>
       <button id="btnStop" class="danger big" hidden><svg class="ic"><use href="#i-close"/></svg>Stop &amp; save</button>
     </div>
-    <label class="switch tgl"><input type="checkbox" id="crashOn"><span class="knob" aria-hidden="true"></span><span>Crash alert <small>(uses motion sensors)</small></span></label>
-    <div id="crashMsg" class="hint"></div>
-    <button id="btnTestCrash" class="ghost small">Test alert countdown</button>
+    <label class="switch tgl"><input type="checkbox" id="crashOn"><span class="knob" aria-hidden="true"></span><span>Automatic crash SOS <small>(motion sensors + GPS)</small></span></label>
+    <div id="crashMsg" class="hint" role="status" aria-live="polite"></div>
+    <div class="glass card" id="autoSosInfo" hidden><b>Automatic crash SOS is ON</b>
+      <small>While a ride or group trip is active, RiderKit watches the motion sensors and your speed. If it sees a hard impact or sudden stop after riding at speed, a full-screen 15-second countdown starts. If you do not tap <b>I'M OK</b>, an SOS alert with your last location is sent to your group (and a message to your emergency contact opens). <b>It only works while RiderKit is open with the screen on</b>, can miss a crash or trigger by mistake, and its limits have not been tested on a real phone. Change it any time in Settings.</small>
+      <div class="row"><button id="autoSosKeep" class="primary small" type="button">Got it, keep it on</button><button id="autoSosOff" class="ghost small" type="button">Turn it off</button></div></div>
+    <button id="btnTestCrash" class="ghost small">Test SOS countdown</button>
     <div class="glass card" id="liveCard"><h3>Share live location with family</h3>
       <div id="liveOff"><div class="row"><label>Name shown<input id="liveName" maxlength="24" placeholder="e.g. Harsh" autocomplete="off"></label><label>Link lasts<select id="liveHours"><option value="1">1 hour</option><option value="2">2 hours</option><option value="4" selected>4 hours</option><option value="8">8 hours</option><option value="12">12 hours</option></select></label></div>
         <button id="liveStart" class="primary">Start sharing</button></div>
@@ -365,6 +368,10 @@
       <input id="setPhone2" aria-label="Contact name" placeholder="Contact name">
       <select id="setVia" aria-label="Send alert via"><option value="sms">Send via SMS</option><option value="whatsapp">Send via WhatsApp</option></select>
       <label>Impact threshold (m/s², default 30 ≈ 3g)<input id="setImpact" type="number" value="30"></label>
+      <label>Auto SOS: only count an impact if speed was above (km/h, default 20)<input id="setMinSpeed" type="number" min="5" max="80" value="20"></label>
+      <label class="switch tgl"><input type="checkbox" id="setAutoStat"><span class="knob" aria-hidden="true"></span><span>Also alert if I stay stopped for a long time during a ride <small>(off by default)</small></span></label>
+      <label>Long stop after (minutes, default 10)<input id="setStatMin" type="number" min="3" max="120" value="10"></label>
+      <small class="hint">Automatic SOS turns on with the &ldquo;Automatic crash SOS&rdquo; switch on the Ride tab. It works only with the app open and the screen on; thresholds are untested on real devices.</small>
       <button class="primary">Save</button>
       <div id="setMsg" class="hint"></div>
     </form>
@@ -390,10 +397,13 @@
 
 <div id="sos" hidden>
   <div class="sosbox">
-    <h1><svg class="ic xl"><use href="#i-sos"/></svg><br>Crash detected?</h1>
-    <div id="sosCount">20</div>
-    <p>Emergency message will open in <b id="sosSec">20</b>s</p>
+    <h1><svg class="ic xl"><use href="#i-sos"/></svg><br><span id="sosTitle">Crash detected?</span></h1>
+    <div id="sosCount">15</div>
+    <p id="sosWhy"></p>
+    <p>SOS will be sent automatically in <b id="sosSec">15</b>s</p>
     <button id="sosCancel" class="primary big">I'M OK — CANCEL</button>
+    <div id="sosStatus" role="alert"></div>
+    <button id="sosDone" class="primary big" hidden>I'M OK — CLOSE</button>
     <div id="sosSend" hidden>
       <p>Tap to open your pre-filled message:</p>
       <a id="sosLink" class="btn danger big">Open message now</a>

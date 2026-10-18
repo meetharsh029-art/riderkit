@@ -89,7 +89,7 @@ function onFix(p) {
   if (!C.acceptFix(prev, fix)) return;
   let sp = c.speed != null && !isNaN(c.speed) ? C.kmh(c.speed) : (prev ? C.kmh(C.haversine(prev, fix) / Math.max(1, (fix.t - prev.t) / 1000)) : 0);
   if (prev) ride.dist += C.haversine(prev, fix);
-  ride.speed = sp; ride.maxSpeed = Math.max(ride.maxSpeed, sp);
+  ride.speed = sp; ride.maxSpeed = Math.max(ride.maxSpeed, sp); autoSpeed(sp / 3.6);
   ride.points.push({ lat: fix.lat, lon: fix.lon, t: fix.t });
   line.addLatLng([fix.lat, fix.lon]);
   if (!marker) marker = L.circleMarker([fix.lat, fix.lon], { radius: 8, color: '#fff', fillColor: cssv('--m-latest'), fillOpacity: 1 }).addTo(map);
@@ -99,6 +99,7 @@ function onFix(p) {
 }
 function onGpsErr(e) { $('gpsMsg').textContent = 'GPS error: ' + e.message + (location.protocol === 'http:' && location.hostname !== 'localhost' ? ' (geolocation needs HTTPS)' : ''); }
 $('btnStart').onclick = async () => {
+  ensureMotion(); detector && detector.reset();
   if (!navigator.geolocation) return $('gpsMsg').textContent = 'Geolocation not supported';
   ride = { start: Date.now(), dist: 0, speed: 0, maxSpeed: 0, points: [], notes: '', photos: [] };
   line.setLatLngs([]); if (marker) { marker.remove(); marker = null; }
@@ -262,52 +263,72 @@ $('tyreForm').onsubmit = async e => { e.preventDefault();
 async function loadSettings() {
   const s = (await kvGet('settings')) || {};
   $('setName').value = s.name || ''; $('setPhone').value = s.phone || ''; $('setPhone2').value = s.contactName || '';
-  $('setVia').value = s.via || 'sms'; $('setImpact').value = s.impact || 30; return s;
+  $('setVia').value = s.via || 'sms'; $('setImpact').value = s.impact || 30; $('setMinSpeed').value = s.minSpeedKmh || 20; $('setAutoStat').checked = !!s.autoStat; $('setStatMin').value = s.statMin || 10; return s;
 }
 $('setForm').onsubmit = async e => { e.preventDefault();
-  await kvSet('settings', { name: $('setName').value, phone: $('setPhone').value, contactName: $('setPhone2').value, via: $('setVia').value, impact: Number($('setImpact').value) || 30 });
-  $('setMsg').textContent = 'Saved.'; if (detector) detector.o.impact = Number($('setImpact').value) || 30; };
+  const old = (await kvGet('settings')) || {}; await kvSet('settings', Object.assign(old, { name: $('setName').value, phone: $('setPhone').value, contactName: $('setPhone2').value, via: $('setVia').value, impact: Number($('setImpact').value) || 30, minSpeedKmh: Math.min(80, Math.max(5, Number($('setMinSpeed').value) || 20)), autoStat: $('setAutoStat').checked, statMin: Math.min(120, Math.max(3, Number($('setStatMin').value) || 10)) }));
+  $('setMsg').textContent = 'Saved.'; await loadAutoCfg(); };
 
-// ---------- crash detection ----------
-let detector = null, motionHandler = null, sosTimer = null;
-async function startCrash() {
-  if (typeof DeviceMotionEvent === 'undefined') { $('crashMsg').textContent = 'Motion sensors not available on this device/browser.'; $('crashOn').checked = false; return; }
-  if (typeof DeviceMotionEvent.requestPermission === 'function') {
-    try { if (await DeviceMotionEvent.requestPermission() !== 'granted') throw 0; } catch { $('crashMsg').textContent = 'Motion permission denied.'; $('crashOn').checked = false; return; }
-  }
-  const s = (await kvGet('settings')) || {};
-  if (!s.phone) $('crashMsg').textContent = 'Warning: no emergency contact saved (SOS tab).';
-  detector = new C.CrashDetector({ impact: s.impact || 30 });
-  let got = false;
-  motionHandler = e => { const a = e.accelerationIncludingGravity; if (!a || a.x == null) return; got = true;
-    if (detector.feed({ t: Date.now(), mag: Math.hypot(a.x, a.y, a.z) })) triggerSOS(); };
-  addEventListener('devicemotion', motionHandler);
-  $('crashMsg').textContent = 'Crash alert armed. Keep the phone secured on the bike.';
-  setTimeout(() => { if (!got && $('crashOn').checked) $('crashMsg').textContent = 'No motion data received — this device may not support it (desktops usually do not).'; }, 3000);
+// ---------- automatic SOS (crash + optional long stop) ----------
+// Armed only while a solo ride is recording or a group trip is open, and only while the page is running with the screen on.
+const SOS_SEC = 15;
+let detector = null, motionHandler = null, sosTimer = null, sosState = null, autoCfg = { on: true, stat: false };
+const autoActive = () => !!(autoCfg.on && (ride || G.sess));
+const autoCfgFrom = s => ({ on: s.autoSos !== false, stat: !!s.autoStat, impact: s.impact || 30, minKmh: s.minSpeedKmh || 20, statMin: s.statMin || 10, ack: !!s.autoAck });
+async function loadAutoCfg() { autoCfg = autoCfgFrom((await kvGet('settings')) || {}); $('crashOn').checked = autoCfg.on; $('autoSosInfo').hidden = autoCfg.ack || !autoCfg.on; buildDetector(); return autoCfg; }
+function buildDetector() { detector = new window.Extra.AutoSos({ impact: autoCfg.impact, minSpeedMps: autoCfg.minKmh / 3.6, stationary: autoCfg.stat, stationaryMs: autoCfg.statMin * 60000 }); }
+async function saveSetting(patch) { const s = (await kvGet('settings')) || {}; Object.assign(s, patch); await kvSet('settings', s); return s; }
+async function ensureMotion() { // call from a tap where possible (iOS asks for permission only from a gesture)
+  if (!autoCfg.on) return;
+  if (typeof DeviceMotionEvent === 'undefined') { $('crashMsg').textContent = 'Motion sensors not available on this device/browser: automatic crash SOS can only use GPS speed here.'; return; }
+  if (typeof DeviceMotionEvent.requestPermission === 'function' && !ensureMotion.asked) { ensureMotion.asked = true;
+    try { if (await DeviceMotionEvent.requestPermission() !== 'granted') throw 0; } catch { $('crashMsg').textContent = 'Motion permission denied: automatic crash SOS will rely on GPS speed only.'; } }
+  if (!motionHandler) { let got = false;
+    motionHandler = e => { const a = e.accelerationIncludingGravity; if (!a || a.x == null) return; got = true; if (!autoActive()) return;
+      autoEvent(detector.feedMotion({ t: Date.now(), mag: Math.hypot(a.x, a.y, a.z) })); };
+    addEventListener('devicemotion', motionHandler);
+    setTimeout(() => { if (!got && autoCfg.on) $('crashMsg').textContent = 'No motion data received: this device may not support it (desktops usually do not). Speed-based detection still works.'; }, 3000); }
+  $('crashMsg').textContent = 'Automatic crash SOS armed while a ride or group trip is active. Keep the phone secured and the screen on.';
 }
-function stopCrash() { removeEventListener('devicemotion', motionHandler); detector = null; $('crashMsg').textContent = ''; }
-$('crashOn').onchange = e => e.target.checked ? startCrash() : stopCrash();
-$('btnTestCrash').onclick = () => triggerSOS();
+function autoSpeed(mps) { if (autoActive() && mps != null && !isNaN(mps)) autoEvent(detector.feedSpeed({ t: Date.now(), mps })); }
+setInterval(() => { if (autoActive()) autoEvent(detector.tick(Date.now())); }, 1000);
+function autoEvent(ev) { if (ev && $('sos').hidden) triggerSOS(ev); }
+$('crashOn').onchange = async e => { autoCfg.on = e.target.checked; await saveSetting({ autoSos: autoCfg.on, autoAck: true }); autoCfg.ack = true; $('autoSosInfo').hidden = true; $('crashMsg').textContent = autoCfg.on ? '' : 'Automatic crash SOS is OFF. Nothing will be sent automatically.'; if (autoCfg.on) ensureMotion(); };
+$('autoSosKeep').onclick = async () => { autoCfg.ack = true; $('autoSosInfo').hidden = true; await saveSetting({ autoAck: true, autoSos: true }); };
+$('autoSosOff').onclick = async () => { autoCfg.on = false; autoCfg.ack = true; $('crashOn').checked = false; $('autoSosInfo').hidden = true; await saveSetting({ autoAck: true, autoSos: false }); $('crashMsg').textContent = 'Automatic crash SOS is OFF. Nothing will be sent automatically.'; };
+$('btnTestCrash').onclick = () => triggerSOS({ kind: 'test', reason: 'This is a test: nothing is sent to your group unless you let it run out.' });
+loadAutoCfg();
+window.__rkAutoSos = { feedSpeed: mps => autoSpeed(mps), get detector() { return detector; }, cfg: () => autoCfg };
 
-async function triggerSOS() {
-  if (!$('sos').hidden) return;
+const sosBeep = () => { try { const AC = window.AudioContext || window.webkitAudioContext, ac = sosBeep.ac ||= new AC(); const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = 1000; g.gain.value = 1; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + .35); } catch {} window.__sosBeeps = (window.__sosBeeps || 0) + 1; };
+async function triggerSOS(ev) {
+  if (!$('sos').hidden) return; ev = ev && ev.kind ? ev : { kind: 'test', reason: '' };
   const s = (await kvGet('settings')) || {};
-  let n = 20; $('sos').hidden = false; $('sosSend').hidden = true; $('sosCancel').hidden = false;
+  let n = SOS_SEC; sosState = { ev, sent: false, group: false }; $('sos').hidden = false; $('sosSend').hidden = true; $('sosCancel').hidden = false; $('sosDone').hidden = true; $('sosStatus').textContent = '';
+  $('sosTitle').textContent = ev.kind === 'stationary' ? 'Stopped for a long time. Are you OK?' : ev.kind === 'test' ? 'Test: SOS countdown' : 'Crash detected?';
+  $('sosWhy').textContent = ev.reason ? 'Why: ' + ev.reason : '';
   const upd = () => { $('sosCount').textContent = n; $('sosSec').textContent = n; };
-  upd(); navigator.vibrate?.([500, 200, 500]);
-  const beep = () => { try { const ac = beep.ac ||= new AudioContext(); const o = ac.createOscillator(); o.connect(ac.destination); o.frequency.value = 880; o.start(); o.stop(ac.currentTime + .2); } catch {} };
-  sosTimer = setInterval(() => { n--; upd(); beep(); navigator.vibrate?.(200);
-    if (n <= 0) { clearInterval(sosTimer); fire(s); } }, 1000);
+  upd(); navigator.vibrate?.([500, 200, 500]); sosBeep();
+  clearInterval(sosTimer); sosTimer = setInterval(() => { n--; upd(); sosBeep(); navigator.vibrate?.(300);
+    if (n <= 0) { clearInterval(sosTimer); fire(s, ev); } }, 1000);
 }
-function fire(s) {
-  const links = C.alertLinks(s.phone, s.name, lastLoc);
-  const href = s.via === 'whatsapp' ? links.whatsapp : links.sms;
-  $('sosCount').textContent = '!'; $('sosCancel').hidden = true; $('sosSend').hidden = false;
-  if (!s.phone) { $('sosSend').innerHTML = '<p>No emergency contact saved! Call 112.</p><a class="btn danger big" href="tel:112">Call 112</a>'; return; }
+async function fire(s, ev) {
+  $('sosCount').textContent = '!'; $('sosCancel').hidden = true; $('sosDone').hidden = false; $('sosSec').parentElement.hidden = true; sosState.sent = true; window.__sosFired = (window.__sosFired || 0) + 1;
+  const loc = G.fix ? { lat: G.fix.lat, lon: G.fix.lng, acc: G.fix.acc, t: G.fix.t } : lastLoc; const notes = [];
+  if (G.sess) { // existing group alert channel
+    try { await gApi('POST', '/' + encodeURIComponent(G.sess.code) + '/alert', { token: G.sess.token, type: 'sos', lat: loc ? loc.lat : undefined, lng: loc ? loc.lon : undefined }); sosState.group = true; notes.push(loc ? 'SOS sent to your group with your last location.' : 'SOS sent to your group (no GPS fix, so no location).'); }
+    catch (e) { notes.push('Could not send the SOS to your group: ' + e.message + '.'); } }
+  if (ev.kind === 'test') notes.push('(This was a test.)');
+  $('sosStatus').textContent = notes.join(' ');
+  const links = C.alertLinks(s.phone, s.name, lastLoc || loc), href = s.via === 'whatsapp' ? links.whatsapp : links.sms;
+  $('sosSend').hidden = false;
+  if (!s.phone) { $('sosSend').innerHTML = '<p>' + (sosState.group ? 'No emergency contact saved. ' : 'No emergency contact saved and no group! ') + 'Call 112 if you need help.</p><a class="btn danger big" href="tel:112">Call 112</a>'; return; }
   $('sosLink').href = href;
-  location.href = href; // may be blocked without a user tap; the button above is the fallback
+  if (ev.kind !== 'test') location.href = href; // may be blocked without a user tap; the button above is the fallback
 }
-$('sosCancel').onclick = () => { clearInterval(sosTimer); $('sos').hidden = true; detector?.reset(); };
+$('sosCancel').onclick = () => { clearInterval(sosTimer); $('sos').hidden = true; sosState = null; detector?.reset(); detector && (detector.coolUntil = Date.now() + 30000); };
+$('sosDone').onclick = async () => { const st = sosState; $('sos').hidden = true; $('sosSec').parentElement.hidden = false; sosState = null; detector?.reset(); detector && (detector.coolUntil = Date.now() + 30000);
+  if (st && st.group && G.sess) await cancelMyAlert(); };
 
 // ---------- group ride (real: server/ + SSE + POST) ----------
 const G = { sess: null, snap: null, offset: 0, map: null, markers: {}, destMk: null, es: null, poll: null, send: null, watch: null, fix: null, fitted: false,
@@ -333,9 +354,9 @@ function gInitMap() {
 }
 function gStart(sess) {
   gSave(sess); try { localStorage.setItem('rk-group-last', JSON.stringify({ code: sess.code, name: sess.name })); } catch {} gMsg(''); gShow('gSetup', false); gShow('gBox', true); $('gCodeShow').textContent = sess.code;
-  gInitMap(); setTimeout(() => G.map.invalidateSize(), 50); G.fitted = false;
+  ensureMotion(); gInitMap(); setTimeout(() => G.map.invalidateSize(), 50); G.fitted = false;
   gConnect(); clearInterval(G.poll); G.poll = setInterval(gPoll, 5000); clearInterval(G.send); G.send = setInterval(gSendLoc, 5000);
-  if (navigator.geolocation && G.watch == null) G.watch = navigator.geolocation.watchPosition(p => { G.fix = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, speed: p.coords.speed, t: Date.now() };
+  if (navigator.geolocation && G.watch == null) G.watch = navigator.geolocation.watchPosition(p => { G.fix = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, speed: p.coords.speed, t: Date.now() }; if (!ride) autoSpeed(p.coords.speed);
     if (G.firstFix !== true) { G.firstFix = true; gSendLoc(); } maybeRoute(); try { window.__rkOnFix && window.__rkOnFix(G.fix); } catch (e) { console.warn(e); } }, e => gMsg('Location unavailable: ' + e.message + '. You can still see others.'), { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
   try { navigator.wakeLock?.request('screen').then(w => G.wake = w).catch(() => {}); } catch {}
 }
