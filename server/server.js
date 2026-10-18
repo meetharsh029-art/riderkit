@@ -8,6 +8,7 @@ const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 const STATIC_BLOCK = /^\/(server|tests|capacitor|node_modules)(\/|$)|^\/store(\/(?!privacy-policy\.html$)|$)|^\/\.|\.md$/i;
 
+const CORS_ORIGINS = new Set(['https://localhost', 'http://localhost', 'capacitor://localhost', ...String(process.env.CORS_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean)]);
 function createServer(opts = {}) {
   const store = new GroupStore(opts.store || { emptyTtlMs: +process.env.GROUP_EMPTY_TTL_MS || undefined, abandonedTtlMs: +process.env.GROUP_ABANDONED_MS || undefined }, opts.clock); // opts.clock: test-only fake clock for the group store
   const lim = new Limiter(opts.now);
@@ -101,6 +102,11 @@ function createServer(opts = {}) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/healthz' && (req.method === 'GET' || req.method === 'HEAD')) { res.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store' }); return res.end(req.method === 'HEAD' ? undefined : 'ok'); }
+    if (url.pathname.startsWith('/api/')) { // CORS for the Capacitor app (no cookies/credentials used, so an origin allow-list is enough)
+      const o = req.headers.origin;
+      if (o && CORS_ORIGINS.has(o)) { res.setHeader('access-control-allow-origin', o); res.setHeader('vary', 'Origin'); }
+      if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400' }); return res.end(); }
+    }
     try { if (url.pathname.startsWith('/api/')) await api(req, res, url); else serveStatic(req, res, url); }
     catch (e) { if (res.headersSent) return res.end(); const s = e.status || 500; if (s === 500) console.error(e); json(res, s, { error: s === 500 ? 'server error' : e.message }); }
   });

@@ -311,10 +311,12 @@ const G = { sess: null, snap: null, offset: 0, map: null, markers: {}, destMk: n
   pick: false, route: null, routedFor: null, routeLine: null, lastRouteAt: 0, lastSearchAt: 0, cache: new Map(), lastEvt: 0 };
 window.__grp = G;
 const GKEY = 'rk-group';
+// API base: same-origin on the web; absolute server URL inside the Capacitor Android/iOS wrapper (origin is https://localhost)
+const API_BASE = (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) ? 'https://riderkit.onrender.com' : '';
 const gShow = (el, on) => { $(el).hidden = !on; };
 function gMsg(t) { $('gMsg').hidden = !t; $('gMsg').textContent = t || ''; }
 async function gApi(method, path, body) {
-  const r = await fetch('/api/groups' + path, { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(API_BASE + '/api/groups' + path, { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   let j = {}; try { j = await r.json(); } catch {}
   if (!r.ok) { const e = new Error(j.error || ('HTTP ' + r.status)); e.status = r.status; throw e; } return j;
 }
@@ -351,7 +353,7 @@ function gStop(msg) {
 }
 function gConnect() {
   G.es?.close(); const s = G.sess; if (!s || !window.EventSource) return;
-  G.es = new EventSource('/api/groups/' + encodeURIComponent(s.code) + '/events?token=' + s.token);
+  G.es = new EventSource(API_BASE + '/api/groups/' + encodeURIComponent(s.code) + '/events?token=' + s.token);
   G.es.addEventListener('state', e => { G.lastEvt = Date.now(); gApply(JSON.parse(e.data)); $('gConn').textContent = 'Live'; });
   G.es.onerror = () => { $('gConn').textContent = 'Reconnecting…'; };
 }
@@ -844,7 +846,7 @@ async function fbFlush() {
   try {
     let q = (await kvGet('fbQueue')) || [];
     while (q.length) {
-      let st = 0; try { st = (await fetch('/api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(q[0]) })).status; } catch { st = 0; }
+      let st = 0; try { st = (await fetch(API_BASE + '/api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(q[0]) })).status; } catch { st = 0; }
       if (st >= 200 && st < 300) { sent++; q = q.slice(1); await kvSet('fbQueue', q); }
       else if (C.fbShouldRetry(st)) break;
       else { q = q.slice(1); await kvSet('fbQueue', q); } // rejected for good (400/413...): drop
