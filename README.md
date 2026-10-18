@@ -29,3 +29,7 @@ Map tiles come from tile.openstreetmap.org (online; viewed tiles are cached at r
 
 ## v4
 UI redesigned (neon dashboard theme), Home dashboard is the default tab, vehicles + editable service schedules + tyre tracking on the Service tab. Tests: `node tests/test.js`, `node tests/server.test.js`, and with puppeteer-core + Chrome + server on :8080: `node tests/e2e.headless.js`, `node tests/e2e.home.js` (`SHOTS=1` refreshes `screenshots/`), `node tests/e2e.group.js`. Run the server behind a tunnel with `TRUST_PROXY=1 node server/server.js`.
+
+
+## v5 stage 1
+Weather (Open-Meteo, route rain alerts, destination forecast), fuel/mileage/₹-per-km log + "what was this stop?", full JSON backup/restore (SOS & settings tab), vehicle editing. Tests: `node tests/test.js`, `node tests/stage1.test.js`, `node tests/server.test.js`; with puppeteer-core + Chrome + internet: `tests/run-all.sh 3` (everything, 3 times).

@@ -31,7 +31,7 @@ window.__rk = { getAll, put, del, kvGet, kvSet }; // exposed for tests/debug
 
 // ---------- icons + tabs ----------
 const ico = (n, c) => `<svg class="ic ${c || ''}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
-const MORE = ['docs', 'help', 'group', 'me'];
+const MORE = ['weather', 'fuel', 'docs', 'help', 'group', 'me'];
 let curTab = 'home';
 function showTab(name) {
   curTab = name;
@@ -44,6 +44,8 @@ function showTab(name) {
   if (name === 'ride') setTimeout(() => map.invalidateSize(), 50);
   if (name === 'group' && G.map) setTimeout(() => G.map.invalidateSize(), 50);
   if (name === 'log') renderRides();
+  if (name === 'weather') renderWeather();
+  if (name === 'fuel') renderFuel();
   if (name === 'service') renderMaint();
   if (name === 'docs') renderDocs();
   if (name === 'help') renderContacts();
@@ -109,9 +111,10 @@ $('btnStop').onclick = async () => {
   const r = ride; ride = null;
   $('btnStart').hidden = false; $('btnStop').hidden = true;
   if (r.points.length < 2 && r.dist < 50 && !confirm('Very short ride with almost no GPS data. Save anyway?')) return;
-  delete r.speed; r.vehicleId = (await activeVehicle()).active.id; r.id = await put('rides', r);
+  delete r.speed; r.stops = C.detectStops(r.points, window.__RK_STOP_SEC); r.vehicleId = (await activeVehicle()).active.id; r.id = await put('rides', r);
   $('gpsMsg').textContent = `Saved: ${C.fmtKm(r.dist)} km in ${C.fmtDuration(r.dur)}`;
   ['sDist','sSpeed','sMax'].forEach(i => $(i).textContent = '0'); $('sTime').textContent = '00:00'; setArc('spdArc', 0); renderHome();
+  if (r.stops.length) promptRideStops(r);
 };
 
 // ---------- ride log ----------
@@ -175,7 +178,7 @@ async function renderMaint() {
   const nw = editingVeh === 'new';
   {
     const v = nw ? { type: 'bike', fuel: 'petrol' } : active; $('vType').value = v.type; fillFuel(v.type, v.fuel);
-    $('vMake').value = v.make || ''; $('vModel').value = v.model || ''; $('vYear').value = v.year || ''; $('vOdo').value = nw ? '' : Math.round(odo);
+    $('vName').value = v.name || ''; $('vMake').value = v.make || ''; $('vModel').value = v.model || ''; $('vYear').value = v.year || ''; $('vOdo').value = nw ? '' : Math.round(odo);
   }
   $('vehDetails').open = nw || !!active.auto || $('vehDetails').open && editingVeh !== null; $('vfTitle').textContent = nw ? 'New vehicle' : 'Vehicle profile'; $('vDel').hidden = nw || S.vs.length < 1 || !!active.auto;
   $('tyreVeh').textContent = nw ? '' : '· ' + (active.auto ? 'My vehicle' : C.vehicleName(active));
@@ -217,14 +220,18 @@ async function renderMaint() {
 }
 $('vSel').onchange = async () => { editingVeh = null; await kvSet('activeVehicle', $('vSel').value); renderMaint(); renderHome(); };
 $('vNew').onclick = () => { editingVeh = 'new'; showVErr([]); renderMaint().then(() => $('vMake').focus()); };
+$('vEdit').onclick = async () => { editingVeh = null; await renderMaint(); $('vehDetails').open = true; $('vOk').textContent = ''; $('vehDetails').scrollIntoView({ block: 'start' }); $('vName').focus(); };
 $('vehForm').onsubmit = async e => { e.preventDefault();
   const S = await vehicleState(); const nw = editingVeh === 'new';
-  const r = C.normalizeVehicle({ type: $('vType').value, fuel: $('vFuel').value, make: $('vMake').value, model: $('vModel').value, year: $('vYear').value, odo: $('vOdo').value });
-  if (!r.ok) return showVErr(r.errors); showVErr([]);
-  const v = r.value; const id = nw ? 'v' + Date.now() : S.active.id; v.id = id;
-  const tracked = nw ? 0 : C.vehicleOdo({ id, odo: 0 }, S.rides, S.defId); v.odo = Math.max(0, v.odo - tracked); // entered = current reading; store base so tracked rides keep adding
+  const fields = { type: $('vType').value, fuel: $('vFuel').value, name: $('vName').value, make: $('vMake').value, model: $('vModel').value, year: $('vYear').value, odo: $('vOdo').value };
+  let v, note = '';
+  if (nw) { const r = C.normalizeVehicle(fields); if (!r.ok) return showVErr(r.errors); v = r.value; v.id = 'v' + Date.now(); }
+  else { const tracked = C.vehicleOdo({ id: S.active.id, odo: 0 }, S.rides, S.defId); const r = C.editVehicle(S.active, fields, tracked); if (!r.ok) return showVErr(r.errors); v = r.value;
+    if (r.clamped) note = ` Odometer can't be below the ${r.minOdo.toLocaleString('en-IN')} km already tracked in rides, so it was set to that.`;
+    note = `Saved. Kept ${S.items.length} service item${S.items.length === 1 ? '' : 's'}, tyre records, fuel log and ${S.rides.filter(x => (x.vehicleId || S.defId) === S.active.id).length} ride(s).` + note; }
+  showVErr([]); const id = v.id;
   const vs = S.vs.filter(x => !x.auto); if (nw) vs.push(v); else { const i = vs.findIndex(x => x.id === id); if (i >= 0) vs[i] = v; else vs.unshift(v); }
-  await kvSet('vehicles', vs); await kvSet('activeVehicle', id); editingVeh = null; renderMaint(); renderHome(); };
+  await kvSet('vehicles', vs); await kvSet('activeVehicle', id); editingVeh = null; await renderMaint(); $('vOk').textContent = nw ? 'Vehicle added.' : note; renderHome(); };
 $('vDel').onclick = async () => { const S = await vehicleState(); if (S.active.auto || !confirm('Delete ' + C.vehicleName(S.active) + ' and its service reminders and tyre records? Rides are kept.')) return;
   for (const it of S.items) await del('maint', it.id);
   const all = (await kvGet('tyres')) || {}; delete all[S.active.id]; await kvSet('tyres', all);
@@ -326,6 +333,7 @@ function gStart(sess) {
   try { navigator.wakeLock?.request('screen').then(w => G.wake = w).catch(() => {}); } catch {}
 }
 function gStop(msg) {
+  kvSet('activeRoute', null);
   gSave(null); G.es?.close(); G.es = null; clearInterval(G.poll); clearInterval(G.send);
   if (G.watch != null) navigator.geolocation.clearWatch(G.watch); G.watch = null; G.firstFix = false; try { G.wake?.release(); } catch {}
   Object.values(G.markers).forEach(m => m.remove()); G.markers = {}; G.destMk?.remove(); G.destMk = null; G.routeLine?.remove(); G.routeLine = null; G.route = null; G.routedFor = null; G.snap = null;
@@ -388,7 +396,7 @@ async function setDest(lat, lng, name) {
 }
 // --- routing (OSRM public demo; car profile; fair-use: only on destination change / button, >=5 s apart) ---
 async function maybeRoute(force) {
-  const d = G.snap?.dest; if (!d) { G.route = null; G.routedFor = null; G.routeLine?.remove(); G.routeLine = null; $('gSteps').innerHTML = ''; $('gRouteInfo').textContent = ''; return; }
+  const d = G.snap?.dest; if (!d) { kvSet('activeRoute', null); G.route = null; G.routedFor = null; G.routeLine?.remove(); G.routeLine = null; $('gSteps').innerHTML = ''; $('gRouteInfo').textContent = ''; return; }
   const key = d.lat + ',' + d.lng + '@' + d.at; if (!force && G.routedFor === key) return;
   if (!G.fix) { $('gRouteInfo').textContent = 'Waiting for your GPS fix to plan a route…'; return; }
   if (Date.now() - G.lastRouteAt < 5000) { if (!force) setTimeout(maybeRoute, 5200 - (Date.now() - G.lastRouteAt)); return; }
@@ -396,7 +404,7 @@ async function maybeRoute(force) {
   try {
     const u = `https://router.project-osrm.org/route/v1/driving/${G.fix.lng.toFixed(6)},${G.fix.lat.toFixed(6)};${d.lng.toFixed(6)},${d.lat.toFixed(6)}?overview=full&geometries=geojson&steps=true`;
     const r = await fetch(u); const j = await r.json().catch(() => null); if (!r.ok && !j) throw new Error('routing service HTTP ' + r.status);
-    const rt = C.parseRoute(j); G.route = rt; G.routeLine?.remove(); G.routeLine = L.polyline(rt.line, { color: '#d946ef', weight: 5, opacity: .9, className: 'glow-am' }).addTo(G.map);
+    const rt = C.parseRoute(j); G.route = rt; saveActiveRoute(rt, d).catch(() => {}); G.routeLine?.remove(); G.routeLine = L.polyline(rt.line, { color: '#d946ef', weight: 5, opacity: .9, className: 'glow-am' }).addTo(G.map);
     G.map.fitBounds(G.routeLine.getBounds().pad(0.15));
     $('gRouteInfo').innerHTML = `<b>${C.fmtDist(rt.distance)}</b> · about ${Math.max(1, Math.round(rt.duration / 60))} min by car <small>(estimate, not live traffic)</small>`;
     $('gSteps').innerHTML = rt.steps.map(st => `<li>${esc(st.text)} <small>${st.dist ? '· ' + esc(C.fmtDist(st.dist)) : ''}</small></li>`).join('');
@@ -558,6 +566,7 @@ async function renderHome() {
   // places
   const cells = C.gridCells(D.rides); $('placeCount').textContent = '≈ ' + cells.length + ' area' + (cells.length === 1 ? '' : 's');
   drawHomeMap(D.rides); setTimeout(() => HM && HM.invalidateSize(), 60); renderGeoNames(cells);
+  renderHomeWx(D.rides); renderHomeFuel();
   // service
   const vname = D.vehicle && !D.vehicle.auto ? C.vehicleName(D.vehicle) : '';
   const ups = D.maint.map(it => C.nextService([it], D.odo, now)).filter(Boolean).sort((a, b) => b.progress - a.progress);
@@ -606,6 +615,166 @@ $('geoBtn').onclick = async () => {
 async function setDemo(on) { await kvSet('demo', !!on); renderHome(); }
 $('demoToggle').onchange = e => setDemo(e.target.checked); $('demoOff').onclick = () => setDemo(false); $('emptyDemo').onclick = () => setDemo(true);
 $('homeStart').onclick = () => { showTab('ride'); if (!ride) $('btnStart').click(); };
+
+// ---------- v5 stage 1: weather (Open-Meteo) ----------
+const wxIco = k => ({ sun: 'sun', pcloud: 'cloud', cloud: 'cloud', fog: 'cloud', snow: 'cloud', rain: 'rain', storm: 'rain' }[k] || 'cloud');
+const wxName = w => C.wmoInfo(w.code).label;
+const fmtT = n => n == null || !isFinite(n) ? '–' : Math.round(n) + '°';
+async function wxFetch(url, force) { // fresh cache (20 min) -> network -> stale cache; throws only if there is nothing at all
+  const cache = (await kvGet('wx')) || {}, key = C.wxKey(url), e = cache[key], now = Date.now();
+  if (!force && C.wxFresh(e, now)) return { data: e.data, t: e.t, stale: false };
+  try {
+    if (!navigator.onLine) throw new Error('offline');
+    const r = await fetch(url); const j = await r.json().catch(() => null); if (!r.ok && !(j && j.error)) throw new Error('weather service HTTP ' + r.status);
+    const data = C.parseOpenMeteo(j); cache[key] = { t: now, data };
+    Object.keys(cache).sort((a, b) => cache[b].t - cache[a].t).slice(12).forEach(k => delete cache[k]); await kvSet('wx', cache);
+    return { data, t: now, stale: false };
+  } catch (err) { if (e) return { data: e.data, t: e.t, stale: true, err: err.message }; throw err; }
+}
+async function getActiveRoute() { // in-memory group route if present, else the last saved one
+  if (G.route && G.snap?.dest) return { line: G.route.line, distance: G.route.distance, duration: G.route.duration, dest: { lat: G.snap.dest.lat, lng: G.snap.dest.lng, name: G.snap.dest.name } };
+  const r = await kvGet('activeRoute'); return r && Array.isArray(r.line) && r.line.length > 1 && r.dest ? r : null;
+}
+async function saveActiveRoute(rt, d) {
+  const step = Math.max(1, Math.ceil(rt.line.length / 300)); const line = rt.line.filter((_, i) => i % step === 0 || i === rt.line.length - 1);
+  await kvSet('activeRoute', { line, distance: rt.distance, duration: rt.duration, dest: { lat: d.lat, lng: d.lng, name: d.name || '' }, at: Date.now() });
+}
+async function loadRouteWx(R, force) {
+  const samples = C.sampleRoute(R.line, C.sampleCount(R.distance)); const res = await wxFetch(C.wxRouteUrl(samples), force);
+  if (res.data.length !== samples.length) throw new Error('weather response did not match the route');
+  return { samples, res, alerts: C.rainAlerts(samples, res.data, R.duration) };
+}
+const staleTxt = r => r.stale ? `<span class="stale">Offline / unavailable – showing saved forecast from ${esc(C.fmtWxAge(r, Date.now()))}</span>` : '<small>updated ' + esc(C.fmtWxAge({ t: r.t }, Date.now())) + '</small>';
+function destHTML(d, dres) {
+  const w = dres.data[0], i = C.wmoInfo(w.code);
+  return `<div class="wx-now"><div class="wx-ic ${i.kind}">${ico(wxIco(i.kind))}</div><div class="wx-tx"><b>${esc(d.name || 'Destination')}</b><br><i class="wx-t">${fmtT(w.temp)}C</i> <small>${esc(i.label)} · wind ${Math.round(w.wind)} km/h</small><br>${staleTxt(dres)}</div></div>` +
+    `<div class="wx-days">${w.daily.map((x, k) => { const di = C.wmoInfo(x.code); return `<div class="wx-day"><b>${k === 0 ? 'Today' : new Date(x.date + 'T12:00').toLocaleDateString('en-IN', { weekday: 'short' })}</b>${ico(wxIco(di.kind))}<br>${esc(di.label)}<br>${fmtT(x.max)} / ${fmtT(x.min)}<br><small>rain ${x.prob == null ? '–' : x.prob + '%'}${x.mm ? ' · ' + x.mm + ' mm' : ''}</small></div>`; }).join('')}</div>`;
+}
+let wxTok = 0;
+async function renderWeather(force) {
+  const tok = ++wxTok; const R = await getActiveRoute(), dest = R ? R.dest : (G.snap?.dest ? { lat: G.snap.dest.lat, lng: G.snap.dest.lng, name: G.snap.dest.name } : null);
+  $('wxStatus').textContent = R ? 'Checking weather along ' + Math.round(R.distance / 1000) + ' km route…' : 'No active route. Set a destination and tap “Route from my location” in the Group tab; rain alerts for the route show here.';
+  $('wxAlert').innerHTML = ''; $('wxSamples').innerHTML = '';
+  if (R) { try { const x = await loadRouteWx(R, force); if (tok !== wxTok) return; const sum = C.routeWeatherSummary(x.alerts);
+      $('wxStatus').innerHTML = staleTxt(x.res) + ' <small>· ' + x.samples.length + ' sample points, departing now</small>';
+      $('wxAlert').innerHTML = `<div class="wx-alert ${sum.level}" role="${sum.level === 'clear' ? 'status' : 'alert'}" id="wxSummary">${ico(sum.level === 'clear' ? 'check' : 'warn')}<div><b>${sum.level === 'clear' ? 'Clear ride ahead' : sum.level === 'storm' ? 'Storm alert' : sum.level === 'rain' ? 'Rain alert' : 'Wind alert'}</b><br>${esc(sum.text)}</div></div>`;
+      $('wxSamples').innerHTML = x.samples.map((s, i) => { const w = x.res.data[i], inf = C.wmoInfo(w.code), al = x.alerts.find(a => a.i === i);
+        return `<div class="wx-row ${inf.kind}"><span>${ico(wxIco(inf.kind))}<b>km ${s.km}</b> <small>${i === 0 ? 'start' : i === x.samples.length - 1 ? 'destination' : '~' + Math.round(R.duration * s.frac / 60) + ' min'}</small></span><span>${fmtT(w.temp)}C · ${esc(inf.label)}${al ? ` <span class="${al.level === 'storm' ? 'due' : 'soon'}">${esc(al.why)}</span>` : ''}</span></div>`; }).join('');
+    } catch (e) { if (tok !== wxTok) return; $('wxStatus').innerHTML = `<span class="stale">Weather unavailable: ${esc(e.message)}.</span> It needs internet the first time; the last good forecast is reused when offline.`; } }
+  if (dest) { try { const d = await wxFetch(C.wxDestUrl({ lat: dest.lat, lon: dest.lng }), force); if (tok !== wxTok) return; $('wxDest').innerHTML = destHTML(dest, d); }
+    catch (e) { if (tok !== wxTok) return; $('wxDest').innerHTML = `<span class="stale">Forecast unavailable: ${esc(e.message)}.</span>`; } }
+  else $('wxDest').innerHTML = '<p class="hint">Pick a destination in the Group tab to see its 3-day forecast.</p>';
+  const h = await kvGet('wxHere'); if (h) showHere(h.lat, h.lon, force); else $('wxHere').innerHTML = '<p class="hint">Tap “Use my location” for the weather where you are now.</p>';
+}
+async function showHere(lat, lon, force) {
+  const pt = { lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100 }; await kvSet('wxHere', pt);
+  try { const r = await wxFetch(C.wxDestUrl(pt), force), w = r.data[0], i = C.wmoInfo(w.code);
+    $('wxHere').innerHTML = `<div class="wx-now"><div class="wx-ic ${i.kind}">${ico(wxIco(i.kind))}</div><div class="wx-tx"><i class="wx-t">${fmtT(w.temp)}C</i> <small>feels ${fmtT(w.feels)} · ${esc(i.label)}</small><br><small>wind ${Math.round(w.wind)} km/h (gusts ${Math.round(w.gust)}) · rain now ${w.precip} mm</small><br>${staleTxt(r)}</div></div>`; return r; }
+  catch (e) { $('wxHere').innerHTML = `<span class="stale">Weather unavailable: ${esc(e.message)}.</span>`; }
+}
+$('wxRefresh').onclick = () => renderWeather(true);
+$('wxHereBtn').onclick = () => { if (!navigator.geolocation) { $('wxHere').textContent = 'Geolocation not supported.'; return; } $('wxHere').textContent = 'Getting your location…';
+  navigator.geolocation.getCurrentPosition(p => showHere(p.coords.latitude, p.coords.longitude, true), e => { $('wxHere').textContent = 'Could not get location: ' + e.message; }, { timeout: 15000, maximumAge: 60000 }); };
+let hwxTok = 0;
+async function renderHomeWx(rides) { // never blocks Home; uses cache first, no GPS prompt
+  const tok = ++hwxTok, box = $('hWx'); const R = await getActiveRoute();
+  let here = null; const lr = (rides || []).slice().sort((a, b) => b.start - a.start).find(r => r.points && r.points.length);
+  if (lastLoc) here = { lat: lastLoc.lat, lon: lastLoc.lon, label: 'your location' }; else if (lr) { const p = lr.points[lr.points.length - 1]; here = { lat: p.lat, lon: p.lon, label: 'where your last ride ended' }; } else { const h = await kvGet('wxHere'); if (h) here = { lat: h.lat, lon: h.lon, label: 'last place you checked' }; }
+  if (!R && !here) { box.innerHTML = '<p class="hint">Weather and rain alerts along your route. Plan a route in the Group tab or open Weather and tap “Use my location”.</p><button class="primary small" data-go="weather">Open weather</button>'; box.querySelector('[data-go]').onclick = () => showTab('weather'); return; }
+  if (!box.innerHTML) box.innerHTML = '<p class="hint">Loading weather…</p>'; let html = '';
+  try {
+    if (R) { const x = await loadRouteWx(R, false), sum = C.routeWeatherSummary(x.alerts);
+      html += `<div class="wx-alert ${sum.level}" id="hWxAlert">${ico(sum.level === 'clear' ? 'check' : 'warn')}<div><b>Route to ${esc(R.dest.name || 'destination')}</b><br>${esc(sum.text)}${x.res.stale ? '<br><span class="stale">saved forecast, ' + esc(C.fmtWxAge(x.res, Date.now())) + '</span>' : ''}</div></div>`;
+      try { const d = await wxFetch(C.wxDestUrl({ lat: R.dest.lat, lon: R.dest.lng }), false), dw = d.data[0], dd = dw.daily[0]; html += `<div class="item"><div><b>Destination</b> <small>${esc(R.dest.name || '')}</small><br><small>${fmtT(dw.temp)}C ${esc(wxName(dw))}${dd ? ' · today ' + fmtT(dd.max) + '/' + fmtT(dd.min) + ', rain ' + (dd.prob == null ? '–' : dd.prob + '%') : ''}</small></div></div>`; } catch {} }
+    else { const r = await wxFetch(C.wxDestUrl(here), false), w = r.data[0], i = C.wmoInfo(w.code);
+      html += `<div class="wx-now"><div class="wx-ic ${i.kind}">${ico(wxIco(i.kind))}</div><div class="wx-tx"><i class="wx-t">${fmtT(w.temp)}C</i> <small>${esc(i.label)} · wind ${Math.round(w.wind)} km/h</small><br><small>near ${esc(here.label)}</small>${r.stale ? '<br><span class="stale">saved forecast, ' + esc(C.fmtWxAge(r, Date.now())) + '</span>' : ''}</div></div><small class="hint">Plan a route in the Group tab to get rain alerts along it.</small>`; }
+  } catch (e) { html = `<p class="hint">Weather unavailable (${esc(e.message)}). It needs internet once; then the last forecast is kept for offline.</p>`; }
+  if (tok === hwxTok) box.innerHTML = html;
+}
+
+// ---------- v5 stage 1: fuel, mileage, stops ----------
+const fuelAll = async () => { const f = await kvGet('fuel'); return Array.isArray(f) ? f : []; };
+let editingFuel = null;
+const fmtRs = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const STOP_LABEL = { fuel: 'Fuel', food: 'Food / chai', rest: 'Rest', photo: 'Photo / view', mechanic: 'Mechanic / puncture', other: 'Other' };
+async function fuelFor(vid) { return C.fuelStats((await fuelAll()).filter(e => e.vehicleId === vid)); }
+async function renderFuel() {
+  const { active } = await activeVehicle(); const odo = await odometer(); const st = await fuelFor(active.id);
+  $('fuelVeh').innerHTML = `Vehicle <b>${esc(C.vehicleName(active) || 'Default vehicle')}</b> · odometer <b>${fmtNum(odo)}</b> km`;
+  $('fuelSummary').innerHTML = st.count ? `<span><b id="fKmpl">${st.avgKmpl == null ? '–' : st.avgKmpl}</b> km/l avg</span><span><b id="fPerKm">${st.perKm == null ? '–' : fmtRs(st.perKm)}</b> per km</span><span><b>${fmtRs(st.totalSpent)}</b> spent</span><span><b>${st.totalLitres}</b> L bought</span>` : '<span>No fill-ups yet. Log your first one below.</span>';
+  if (!editingFuel) { $('fDate').value = todayIso(); $('fOdo').value = Math.round(odo) || ''; }
+  const list = st.entries.slice().reverse();
+  $('fuelList').innerHTML = list.length ? list.map(e => { const seg = st.segs.find(s => s.to === e.odo && s.date === e.date);
+    return `<div class="fuel-item" data-fid="${esc(e.id)}"><div><b>${esc(e.date)}</b> · ${fmtNum(e.odo)} km<br><small>${e.litres} L · ${fmtRs(e.total)}${e.litres ? ' (' + fmtRs(e.total / e.litres) + '/L)' : ''}${e.full ? '' : ' · part fill'}${e.place ? ' · ' + esc(e.place) : ''}</small>${seg ? `<br><small class="okc">${seg.kmpl} km/l · ${fmtRs(seg.perKm)}/km over ${fmtNum(seg.km)} km</small>` : ''}</div><div class="acts"><button class="ghost small" data-fe="${esc(e.id)}" aria-label="Edit fill-up">Edit</button><button class="ghost small" data-fd="${esc(e.id)}" aria-label="Delete fill-up">${ico('close')}</button></div></div>`; }).join('') : '<p class="hint">Nothing logged.</p>';
+  $('fuelList').querySelectorAll('[data-fe]').forEach(b => b.onclick = async () => { const e = (await fuelAll()).find(x => String(x.id) === b.dataset.fe); if (!e) return; editingFuel = e.id; $('fDate').value = e.date; $('fOdo').value = e.odo; $('fLitres').value = e.litres; $('fTotal').value = e.total; $('fPlace').value = e.place || ''; $('fFull').checked = e.full; $('fuelFormTitle').textContent = 'Edit fill-up'; $('fCancel').hidden = false; $('fOdo').focus(); });
+  $('fuelList').querySelectorAll('[data-fd]').forEach(b => b.onclick = async () => { if (!confirm('Delete this fill-up?')) return; await kvSet('fuel', (await fuelAll()).filter(x => String(x.id) !== b.dataset.fd)); renderFuel(); renderHome(); });
+  // stops
+  const rides = await getAll('rides'); const items = [];
+  rides.forEach(r => (r.stops || []).forEach(s => items.push({ t: s.t, kind: s.kind, durSec: s.durSec, src: 'ride' })));
+  ((await kvGet('stops')) || []).forEach(s => items.push({ t: s.t, kind: s.kind, durSec: null, src: 'manual' }));
+  items.sort((a, b) => b.t - a.t);
+  $('stopList').innerHTML = items.length ? items.slice(0, 15).map(s => `<div class="fuel-item"><div><b>${esc(s.kind ? STOP_LABEL[s.kind] : 'Unlabelled stop')}</b><br><small>${new Date(s.t).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}${s.durSec ? ' · ' + Math.round(s.durSec / 60) + ' min' : ''}${s.src === 'manual' ? ' · logged manually' : ''}</small></div></div>`).join('') : '<p class="hint">No stops recorded yet.</p>';
+}
+function resetFuelForm() { editingFuel = null; $('fuelForm').reset(); $('fFull').checked = true; $('fuelFormTitle').textContent = 'Add a fill-up'; $('fCancel').hidden = true; $('fErr').hidden = true; }
+$('fCancel').onclick = () => { resetFuelForm(); renderFuel(); };
+$('fuelForm').onsubmit = async e => { e.preventDefault();
+  const { active } = await activeVehicle(); const raw = { date: $('fDate').value, odo: $('fOdo').value, litres: $('fLitres').value, total: $('fTotal').value, full: $('fFull').checked, place: $('fPlace').value };
+  const errs = C.validateFuel(raw); $('fErr').hidden = !errs.length; $('fErr').textContent = errs.join('. '); if (errs.length) return;
+  const list = await fuelAll(); const ent = C.normalizeFuel(Object.assign({}, raw, { vehicleId: active.id, id: editingFuel || Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }));
+  const i = list.findIndex(x => x.id === ent.id); if (i >= 0) list[i] = ent; else list.push(ent); await kvSet('fuel', list);
+  resetFuelForm(); await renderFuel(); renderHome(); };
+async function renderHomeFuel() {
+  const { active } = await activeVehicle(); const st = await fuelFor(active.id), box = $('hFuel');
+  if (!st.count) { box.innerHTML = '<p class="hint">Log fill-ups to see km/l and ₹ per km for your vehicle.</p><button class="primary small" data-go="fuel">Log a fill-up</button>'; box.querySelector('[data-go]').onclick = () => showTab('fuel'); return; }
+  const l = st.entries[st.entries.length - 1];
+  box.innerHTML = `<div class="grid2 tight"><div><i class="big-n" id="hKmpl">${st.avgKmpl == null ? '–' : st.avgKmpl}</i><small> km/l</small></div><div><i class="big-n" id="hPerKm">${st.perKm == null ? '–' : fmtRs(st.perKm)}</i><small> per km</small></div></div>` +
+    `<div class="kv"><span><b>${fmtRs(st.totalSpent)}</b> spent</span><span><b>${st.count}</b> fill-up${st.count === 1 ? '' : 's'}</span><span>last <b>${esc(l.date)}</b></span></div>` + (st.avgKmpl == null ? '<small class="hint">Needs two full-tank fill-ups to work out mileage.</small>' : '');
+}
+let stopResolve = null;
+function askStop(info) { return new Promise(res => { stopResolve = res; $('stopAskInfo').textContent = info; $('stopAsk').hidden = false; $('stopKinds').querySelector('button').focus(); }); }
+$('stopKinds').innerHTML = C.STOP_KINDS.map(k => `<button type="button" class="ghost" data-sk="${k}">${esc(STOP_LABEL[k])}</button>`).join('');
+$('stopKinds').onclick = e => { const b = e.target.closest('[data-sk]'); if (b && stopResolve) { $('stopAsk').hidden = true; const r = stopResolve; stopResolve = null; r(b.dataset.sk); } };
+$('stopSkip').onclick = () => { $('stopAsk').hidden = true; if (stopResolve) { const r = stopResolve; stopResolve = null; r(null); } };
+async function promptRideStops(r) {
+  let fuelStop = null; const stops = r.stops || [];
+  for (let i = 0; i < Math.min(stops.length, 5); i++) { const s = stops[i];
+    const k = await askStop(`Paused about ${Math.max(1, Math.round(s.durSec / 60))} min at ${new Date(s.t).toLocaleTimeString('en-IN', { timeStyle: 'short' })} (stop ${i + 1} of ${Math.min(stops.length, 5)}).`);
+    if (k) { s.kind = k; await put('rides', r); if (k === 'fuel' && !fuelStop) fuelStop = s; } }
+  if (fuelStop) { showTab('fuel'); resetFuelForm(); await renderFuel(); $('fDate').value = todayIso(); $('fLitres').focus(); }
+  renderFuel();
+}
+$('stopNow').onclick = async () => { const k = await askStop('Log a stop at the current time.'); if (!k) return; const l = (await kvGet('stops')) || []; l.push({ t: Date.now(), kind: k, lat: lastLoc ? lastLoc.lat : null, lon: lastLoc ? lastLoc.lon : null }); await kvSet('stops', l); renderFuel(); if (k === 'fuel') $('fLitres').focus(); };
+
+// ---------- v5 stage 1: backup / restore ----------
+const blobToData = b => new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = () => rej(f.error); f.readAsDataURL(b); });
+const dataToBlob = async u => (await fetch(u)).blob();
+async function exportBackup() {
+  const rides = await getAll('rides'), maint = await getAll('maint');
+  const out = []; for (const r of rides) { const c = Object.assign({}, r); if (Array.isArray(r.photos)) c.photos = await Promise.all(r.photos.map(async p => p instanceof Blob ? { __photo: true, type: p.type, name: p.name || '', data: await blobToData(p) } : p)); out.push(c); }
+  const d = await db(); const kv = await new Promise((res, rej) => { const t = d.transaction('kv', 'readonly'), o = t.objectStore('kv'), ks = o.getAllKeys(), vs = o.getAll(); t.oncomplete = () => { const m = {}; ks.result.forEach((k, i) => m[k] = vs.result[i]); res(m); }; t.onerror = () => rej(t.error); });
+  const bk = C.buildBackup({ rides: out, maint, kv }, Date.now(), 'v5');
+  const json = JSON.stringify(bk), blob = new Blob([json], { type: 'application/json' }), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'riderkit-backup-' + todayIso() + '.json'; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  await kvSet('lastBackup', Date.now()); const c = C.validateBackup(bk).counts;
+  return `Backup saved (${(json.length / 1048576).toFixed(2)} MB): ${c.rides} rides, ${c.photos} photos, ${c.maint} service items, ${c.vehicles} vehicles, ${c.fuel} fill-ups.`;
+}
+async function restoreAll(d) {
+  const rides = []; for (const r of d.rides) { const c = Object.assign({}, r); if (Array.isArray(r.photos)) c.photos = await Promise.all(r.photos.map(p => p && p.__photo ? dataToBlob(p.data) : p)); rides.push(c); }
+  const dbh = await db();
+  return new Promise((res, rej) => { const t = dbh.transaction(['rides', 'maint', 'kv'], 'readwrite'); ['rides', 'maint', 'kv'].forEach(n => t.objectStore(n).clear());
+    rides.forEach(r => t.objectStore('rides').put(r)); d.maint.forEach(m => t.objectStore('maint').put(m)); Object.keys(d.kv).forEach(k => t.objectStore('kv').put(d.kv[k], k));
+    t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Import aborted')); });
+}
+$('bkExport').onclick = async () => { $('bkMsg').textContent = 'Preparing backup…'; try { $('bkMsg').textContent = await exportBackup(); } catch (e) { $('bkMsg').textContent = 'Backup failed: ' + e.message; } };
+$('bkImportBtn').onclick = () => $('bkFile').click();
+$('bkFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { let o; try { o = JSON.parse(await f.text()); } catch { throw new Error('This file is not valid JSON.'); }
+    const v = C.validateBackup(o); if (!v.ok) throw new Error(v.errors.join('. '));
+    const c = v.counts, when = o.exportedAt ? new Date(o.exportedAt).toLocaleString('en-IN') : 'unknown date';
+    if (!confirm(`Replace ALL data on this device with this backup (made ${when})?\n\n${c.rides} rides, ${c.photos} photos, ${c.maint} service items, ${c.vehicles} vehicles, ${c.fuel} fill-ups.\n\nCurrent data will be overwritten. Export a backup first if unsure.`)) { $('bkMsg').textContent = 'Import cancelled. Nothing changed.'; return; }
+    $('bkMsg').textContent = 'Restoring…'; await restoreAll(o.data); sessionStorage.setItem('rk-bk-msg', `Restored ${c.rides} rides, ${c.maint} service items, ${c.fuel} fill-ups from backup.`); location.reload();
+  } catch (err) { $('bkMsg').textContent = 'Import failed: ' + err.message + ' Nothing was changed.'; } };
+{ const m = sessionStorage.getItem('rk-bk-msg'); if (m) { sessionStorage.removeItem('rk-bk-msg'); $('bkMsg').textContent = m; } }
 
 // ---------- init ----------
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();

@@ -315,15 +315,22 @@
   function normalizeVehicle(v, nowYear) {
     v = v || {}; const errors = []; const maxY = (nowYear || new Date().getFullYear()) + 1;
     const type = VEHICLE_TYPES[v.type] ? v.type : null; if (!type) errors.push('Choose bike or car');
-    const make = String(v.make || '').trim().slice(0, 40), model = String(v.model || '').trim().slice(0, 40);
+    const name = String(v.name || '').trim().slice(0, 40), make = String(v.make || '').trim().slice(0, 40), model = String(v.model || '').trim().slice(0, 40);
     if (!make) errors.push('Enter the make');
     const yr = v.year === '' || v.year == null ? null : Number(v.year);
     if (yr !== null && !(Number.isInteger(yr) && yr >= 1950 && yr <= maxY)) errors.push('Year must be 1950-' + maxY);
     const odo = v.odo === '' || v.odo == null ? 0 : Number(v.odo); if (!isFinite(odo) || odo < 0 || odo > 2e6) errors.push('Odometer must be 0-2,000,000 km');
     const fuel = type && FUELS[type].includes(v.fuel) ? v.fuel : null; if (type && !fuel) errors.push('Choose a fuel type');
-    return { ok: !errors.length, errors, value: { id: v.id, type, make, model, year: yr, odo, fuel } };
+    return { ok: !errors.length, errors, value: { id: v.id, type, name, make, model, year: yr, odo, fuel } };
   }
-  const vehicleName = v => v ? ([v.make, v.model].filter(Boolean).join(' ') || VEHICLE_TYPES[v.type] || 'Vehicle') + (v.year ? ' (' + v.year + ')' : '') : 'No vehicle';
+  // Edit a saved vehicle: validated new fields, but id (and so rides, service items, tyres, fuel log) is kept. enteredOdo = the reading the user typed;
+  // the stored base is that minus tracked km, never below 0 (clamped=true when the typed reading was lower than tracked rides).
+  function editVehicle(old, fields, trackedKm, nowYear) {
+    const r = normalizeVehicle(Object.assign({}, fields), nowYear); if (!r.ok) return r;
+    const base = r.value.odo - (trackedKm || 0); const v = Object.assign({}, old, r.value, { id: old.id, odo: Math.max(0, Math.round(base * 10) / 10) }); delete v.auto;
+    return { ok: true, errors: [], value: v, clamped: base < 0, minOdo: Math.round(trackedKm || 0) };
+  }
+  const vehicleName = v => v ? (v.name ? v.name : [v.make, v.model].filter(Boolean).join(' ') || VEHICLE_TYPES[v.type] || 'Vehicle') + (!v.name && v.year ? ' (' + v.year + ')' : '') : 'No vehicle';
   // Odometer of a vehicle = its base reading + tracked rides assigned to it (rides with no vehicleId belong to `defaultId`).
   function vehicleOdo(v, rides, defaultId) {
     if (!v) return 0; const m = (rides || []).filter(r => (r.vehicleId || defaultId) === v.id).reduce((s, r) => s + (isFinite(r.dist) ? r.dist : 0), 0);
@@ -358,6 +365,108 @@
       name: s.name, kmInterval: s.kmInterval, monthInterval: s.monthInterval, dayInterval: monthsToDays(s.monthInterval),
       lastKm: Math.round(odo), lastDate: todayIso, vehicleId: vehicle.id, suggested: true }));
   }
-  const api = { VEHICLE_TYPES, FUELS, suggestSchedule, normalizeVehicle, vehicleName, vehicleOdo, nextDue, markDone, scheduleItems, monthsToDays, daysToMonths, rideStats, gridCells, cellOf, thin, nextService, tyreStatus, TYRE_GUIDE, demoData, CELL_DEG, groupFlags, fmtAgo, fmtDist, normCode, codeFromSearch, gmapsLink, stepText, parseRoute, DOC_TYPES, docStatus, docAlerts, dayNum, toGPX, parseGPX, DEFAULT_CONTACTS, telLink, shareLocationLinks, haversine, totalDistance, acceptFix, kmh, fmtDuration, fmtKm, fmtINR, CrashDetector, alertLinks, maintStatus };
+  // ---------- v5 stage 1: weather (Open-Meteo), fuel log, stops, backup ----------
+  const WX_RAIN = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82], WX_STORM = [95, 96, 99];
+  function wmoInfo(code) {
+    const c = Number(code); const t = { 0: ['Clear sky', 'sun'], 1: ['Mostly clear', 'sun'], 2: ['Partly cloudy', 'pcloud'], 3: ['Overcast', 'cloud'], 45: ['Fog', 'fog'], 48: ['Rime fog', 'fog'],
+      51: ['Light drizzle', 'rain'], 53: ['Drizzle', 'rain'], 55: ['Heavy drizzle', 'rain'], 56: ['Freezing drizzle', 'rain'], 57: ['Freezing drizzle', 'rain'], 61: ['Light rain', 'rain'], 63: ['Rain', 'rain'], 65: ['Heavy rain', 'rain'],
+      66: ['Freezing rain', 'rain'], 67: ['Freezing rain', 'rain'], 71: ['Light snow', 'snow'], 73: ['Snow', 'snow'], 75: ['Heavy snow', 'snow'], 77: ['Snow grains', 'snow'], 80: ['Rain showers', 'rain'], 81: ['Rain showers', 'rain'], 82: ['Violent showers', 'rain'],
+      85: ['Snow showers', 'snow'], 86: ['Snow showers', 'snow'], 95: ['Thunderstorm', 'storm'], 96: ['Thunderstorm, hail', 'storm'], 99: ['Thunderstorm, hail', 'storm'] }[c];
+    const base = t ? { label: t[0], kind: t[1] } : { label: 'Unknown', kind: 'cloud' };
+    return Object.assign(base, { rain: WX_RAIN.includes(c) || WX_STORM.includes(c), storm: WX_STORM.includes(c) });
+  }
+  // n points evenly spaced by distance along a [[lat,lon],...] line, always including first and last. km = distance from start.
+  function sampleRoute(line, n) {
+    const pts = (line || []).filter(p => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1])); if (!pts.length) return [];
+    const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine({ lat: pts[i - 1][0], lon: pts[i - 1][1] }, { lat: pts[i][0], lon: pts[i][1] }));
+    const total = cum[cum.length - 1]; n = Math.max(2, Math.min(12, Math.round(n) || 2)); if (pts.length === 1 || total === 0) return [{ lat: pts[0][0], lon: pts[0][1], km: 0, frac: 0 }];
+    const out = []; let j = 1;
+    for (let k = 0; k < n; k++) { const d = total * k / (n - 1); while (j < pts.length - 1 && cum[j] < d) j++;
+      const seg = cum[j] - cum[j - 1] || 1, f = Math.max(0, Math.min(1, (d - cum[j - 1]) / seg));
+      out.push({ lat: +(pts[j - 1][0] + (pts[j][0] - pts[j - 1][0]) * f).toFixed(4), lon: +(pts[j - 1][1] + (pts[j][1] - pts[j - 1][1]) * f).toFixed(4), km: +(d / 1000).toFixed(1), frac: k / (n - 1) }); }
+    return out;
+  }
+  const sampleCount = distM => Math.max(2, Math.min(8, Math.ceil((distM || 0) / 40000) + 1));
+  const wxRouteUrl = pts => 'https://api.open-meteo.com/v1/forecast?latitude=' + pts.map(p => (+p.lat).toFixed(3)).join(',') + '&longitude=' + pts.map(p => (+p.lon).toFixed(3)).join(',') +
+    '&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m&hourly=precipitation_probability,precipitation,weather_code&forecast_hours=12&timezone=auto';
+  const wxDestUrl = p => 'https://api.open-meteo.com/v1/forecast?latitude=' + (+p.lat).toFixed(3) + '&longitude=' + (+p.lon).toFixed(3) +
+    '&current=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&forecast_days=3&timezone=auto';
+  // Open-Meteo returns an object for one location and an array for several. Always returns an array of locations; throws on an error body.
+  function parseOpenMeteo(j) {
+    if (j && j.error) throw new Error(j.reason || 'weather service error');
+    const arr = Array.isArray(j) ? j : j && typeof j === 'object' ? [j] : null; if (!arr || !arr.length) throw new Error('unexpected weather response');
+    return arr.map(o => { if (!o || !o.current) throw new Error('weather response has no current conditions'); const c = o.current;
+      return { temp: c.temperature_2m, feels: c.apparent_temperature, precip: c.precipitation || 0, code: c.weather_code, wind: c.wind_speed_10m, gust: c.wind_gusts_10m, time: c.time,
+        hourly: o.hourly ? (o.hourly.time || []).map((t, i) => ({ time: t, prob: o.hourly.precipitation_probability ? o.hourly.precipitation_probability[i] : null, mm: o.hourly.precipitation ? o.hourly.precipitation[i] : 0, code: o.hourly.weather_code ? o.hourly.weather_code[i] : null })) : [],
+        daily: o.daily ? (o.daily.time || []).map((t, i) => ({ date: t, code: o.daily.weather_code[i], max: o.daily.temperature_2m_max[i], min: o.daily.temperature_2m_min[i], prob: o.daily.precipitation_probability_max ? o.daily.precipitation_probability_max[i] : null, mm: o.daily.precipitation_sum ? o.daily.precipitation_sum[i] : 0 })) : [] }; });
+  }
+  // Rain / storm / gust alerts per sample. samples[i] = {km, frac}; wx[i] = parseOpenMeteo location; durSec = route duration (departure assumed now).
+  function rainAlerts(samples, wx, durSec) {
+    const out = [];
+    samples.forEach((s, i) => { const w = wx[i]; if (!w) return; const etaMin = Math.round((durSec || 0) * (s.frac || 0) / 60);
+      const info = wmoInfo(w.code); let level = null, why = '';
+      if (info.storm) { level = 'storm'; why = 'thunderstorm now'; } else if (info.rain || w.precip >= 0.1) { level = 'rain'; why = 'raining now'; }
+      if (!level && w.hourly && w.hourly.length) { const h = w.hourly[Math.min(w.hourly.length - 1, Math.max(0, Math.round(etaMin / 60)))];
+        if (h) { const hi = wmoInfo(h.code); if (hi.storm) { level = 'storm'; why = 'thunderstorm expected'; } else if ((h.prob != null && h.prob >= 50) || h.mm >= 0.5 || hi.rain) { level = 'rain'; why = 'rain expected' + (h.prob != null ? ' (' + h.prob + '%)' : ''); } } }
+      if (!level && w.gust >= 50) { level = 'wind'; why = 'strong gusts ' + Math.round(w.gust) + ' km/h'; }
+      if (level) out.push({ i, km: s.km, etaMin, level, why }); });
+    return out;
+  }
+  function routeWeatherSummary(alerts) {
+    if (!alerts.length) return { level: 'clear', text: 'No rain or strong wind expected along the route in the next 12 h forecast.' };
+    const a = alerts.find(x => x.level === 'storm') || alerts.find(x => x.level === 'rain') || alerts[0];
+    return { level: a.level, text: (a.level === 'storm' ? 'Thunderstorm risk' : a.level === 'rain' ? 'Rain' : 'Strong wind') + ' near km ' + a.km + (a.etaMin ? ' (about ' + a.etaMin + ' min from now)' : '') + ': ' + a.why + '. ' + alerts.length + ' of the sample points affected.' };
+  }
+  const wxKey = u => String(u).replace(/^https:\/\/api\.open-meteo\.com\/v1\/forecast\?/, '');
+  const wxFresh = (e, now, ttlMs) => !!(e && e.t && now - e.t < (ttlMs == null ? 20 * 60000 : ttlMs));
+  const fmtWxAge = (e, now) => { if (!e || !e.t) return ''; const m = Math.max(0, Math.round((now - e.t) / 60000)); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; };
+
+  // Fuel log. Entry: {id, vehicleId, date:'YYYY-MM-DD', odo, litres, total (₹), full:boolean, place?}
+  function validateFuel(e) {
+    const errs = [], n = x => (x === '' || x == null) ? NaN : Number(x);
+    if (dayNum(e.date) === null) errs.push('Date must be YYYY-MM-DD');
+    if (!(n(e.odo) >= 0)) errs.push('Odometer must be a number, 0 or more');
+    if (!(n(e.litres) > 0 && n(e.litres) < 1000)) errs.push('Litres must be more than 0');
+    if (!(n(e.total) >= 0 && isFinite(n(e.total)))) errs.push('Amount in ₹ must be 0 or more');
+    return errs;
+  }
+  function normalizeFuel(e) { return { id: e.id, vehicleId: e.vehicleId, date: e.date, odo: Math.round(Number(e.odo)), litres: +Number(e.litres).toFixed(2), total: +Number(e.total).toFixed(2), full: e.full !== false, place: String(e.place || '').slice(0, 60) }; }
+  // Full-to-full method: mileage between two consecutive FULL fills = km driven / litres bought in fills after the first one up to and including the second.
+  function fuelStats(entries) {
+    const es = (entries || []).filter(e => isFinite(e.odo) && e.litres > 0).slice().sort((a, b) => a.odo - b.odo || (dayNum(a.date) - dayNum(b.date)));
+    const segs = []; let lastFull = null, litres = 0, cost = 0;
+    es.forEach(e => { if (lastFull) { litres += e.litres; cost += e.total || 0; }
+      if (e.full) { if (lastFull && e.odo > lastFull.odo && litres > 0) { const km = e.odo - lastFull.odo; segs.push({ from: lastFull.odo, to: e.odo, km, litres: +litres.toFixed(2), cost: +cost.toFixed(2), kmpl: +(km / litres).toFixed(2), perKm: +(cost / km).toFixed(2), date: e.date }); } lastFull = e; litres = 0; cost = 0; } });
+    const sumKm = segs.reduce((s, x) => s + x.km, 0), sumL = segs.reduce((s, x) => s + x.litres, 0), sumC = segs.reduce((s, x) => s + x.cost, 0);
+    return { entries: es, segs, avgKmpl: sumL ? +(sumKm / sumL).toFixed(1) : null, perKm: sumKm ? +(sumC / sumKm).toFixed(2) : null, last: segs[segs.length - 1] || null,
+      totalSpent: +es.reduce((s, x) => s + (x.total || 0), 0).toFixed(2), totalLitres: +es.reduce((s, x) => s + x.litres, 0).toFixed(1), count: es.length };
+  }
+  // Stops: a run of GPS points staying within radiusM of the first one for >= minSec. (Fixes are filtered when stationary, so a time gap with no movement counts.)
+  function detectStops(points, minSec, radiusM) {
+    minSec = minSec || 180; radiusM = radiusM || 100; const p = points || [], out = []; let i = 0;
+    while (i < p.length - 1) { let j = i + 1; while (j < p.length && haversine(p[i], p[j]) <= radiusM) j++;
+      if (j > i + 1 && (p[j - 1].t - p[i].t) / 1000 >= minSec) { out.push({ lat: p[i].lat, lon: p[i].lon, t: p[i].t, durSec: Math.round((p[j - 1].t - p[i].t) / 1000), kind: null }); i = j; } else i++; }
+    return out;
+  }
+  const STOP_KINDS = ['fuel', 'food', 'rest', 'photo', 'mechanic', 'other'];
+
+  // Backup file: {app, schema, exportedAt, data:{rides, maint, kv}}. Photos are inlined as data URLs by the app before calling this.
+  const BACKUP_KV_SKIP = ['wx', 'demo'];
+  function buildBackup(data, now, appVersion) {
+    const kv = {}; Object.keys(data.kv || {}).forEach(k => { if (!BACKUP_KV_SKIP.includes(k)) kv[k] = data.kv[k]; });
+    return { app: 'riderkit', schema: 1, appVersion: appVersion || 'v5', exportedAt: new Date(now == null ? Date.now() : now).toISOString(), data: { rides: data.rides || [], maint: data.maint || [], kv } };
+  }
+  function validateBackup(o) {
+    const errors = []; if (!o || typeof o !== 'object' || Array.isArray(o)) return { ok: false, errors: ['Not a RiderKit backup (not a JSON object)'], counts: null };
+    if (o.app !== 'riderkit') errors.push('Not a RiderKit backup (missing app marker)');
+    if (o.schema !== 1) errors.push('Unsupported backup version: ' + o.schema);
+    const d = o.data; if (!d || typeof d !== 'object') errors.push('Backup has no data section');
+    else { if (!Array.isArray(d.rides)) errors.push('rides must be a list'); if (!Array.isArray(d.maint)) errors.push('maint must be a list'); if (!d.kv || typeof d.kv !== 'object' || Array.isArray(d.kv)) errors.push('kv must be an object');
+      if (Array.isArray(d.rides) && d.rides.some(r => !r || typeof r !== 'object' || !isFinite(r.start))) errors.push('A ride is missing its start time');
+      if (Array.isArray(d.maint) && d.maint.some(r => !r || typeof r !== 'object')) errors.push('A service item is malformed'); }
+    const fuel = d && d.kv && Array.isArray(d.kv.fuel) ? d.kv.fuel.length : 0;
+    return { ok: !errors.length, errors, counts: errors.length ? null : { rides: d.rides.length, maint: d.maint.length, fuel, vehicles: Array.isArray(d.kv.vehicles) ? d.kv.vehicles.length : 0, photos: d.rides.reduce((s, r) => s + (Array.isArray(r.photos) ? r.photos.length : 0), 0) } };
+  }
+  const api = { VEHICLE_TYPES, FUELS, suggestSchedule, normalizeVehicle, editVehicle, vehicleName, vehicleOdo, nextDue, markDone, scheduleItems, monthsToDays, daysToMonths, rideStats, gridCells, cellOf, thin, nextService, tyreStatus, TYRE_GUIDE, demoData, CELL_DEG, groupFlags, fmtAgo, fmtDist, normCode, codeFromSearch, gmapsLink, stepText, parseRoute, DOC_TYPES, docStatus, docAlerts, dayNum, toGPX, parseGPX, DEFAULT_CONTACTS, telLink, shareLocationLinks, haversine, totalDistance, acceptFix, kmh, fmtDuration, fmtKm, fmtINR, CrashDetector, alertLinks, maintStatus, wmoInfo, sampleRoute, sampleCount, wxRouteUrl, wxDestUrl, parseOpenMeteo, rainAlerts, routeWeatherSummary, wxKey, wxFresh, fmtWxAge, validateFuel, normalizeFuel, fuelStats, detectStops, STOP_KINDS, buildBackup, validateBackup, BACKUP_KV_SKIP };
   if (typeof module !== 'undefined') module.exports = api; else root.Core = api;
 })(typeof self !== 'undefined' ? self : this);

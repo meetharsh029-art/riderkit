@@ -42,6 +42,11 @@
 <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.500 4.500 4.500L19 7.500"/></symbol>
 <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.500" y="5" width="17" height="15" rx="2.500"/><path d="M3.500 10h17M8 3v4M16 3v4"/></symbol>
 <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 6 6-2.500 6 2.500 6-2.500v14L15 20l-6-2.500L3 20z"/><path d="M9 3.500v14M15 6v14"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7 8.8 4.6 4.6 0 0 0 7 18z"/></symbol>
+<symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 15h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7 5.8 4.6 4.6 0 0 0 7 15z"/><path d="m8 18-1 2.5M12 18l-1 2.5M16 18l-1 2.5"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></symbol>
+<symbol id="i-fuel" viewBox="0 0 24 24"><path d="M5 20V5a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 15 5v15M4 20h12M5 9.5h10"/><path d="M15 8l3 2.500v6a1.500 1.500 0 0 0 3 0V9l-2.500-2.500"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
 </defs></svg>
 <header><div class="brand"><svg class="ic lg"><use href="#i-bolt"/></svg><b>Rider<span>Kit</span></b></div><small id="net" role="status"></small></header>
@@ -86,6 +91,14 @@
       <small class="hint">Approximate: counts distinct ~5&nbsp;km grid squares your routes pass through, not official towns. Map &copy; OpenStreetMap contributors (needs internet; routes still draw offline).</small>
       <div class="row"><button id="geoBtn" class="ghost small"><svg class="ic"><use href="#i-pin"/></svg>Name these areas (online)</button></div>
       <div id="geoOut" class="hint" aria-live="polite"></div>
+    </div>
+    <div class="glass card2" id="hWxCard">
+      <div class="card-h"><h3><svg class="ic"><use href="#i-cloud"/></svg>Weather</h3><button class="link" data-go="weather">Open</button></div>
+      <div id="hWx"></div>
+    </div>
+    <div class="glass card2" id="hFuelCard">
+      <div class="card-h"><h3><svg class="ic"><use href="#i-fuel"/></svg>Fuel &amp; mileage</h3><button class="link" data-go="fuel">Log</button></div>
+      <div id="hFuel"></div>
     </div>
     <div class="glass card2" id="hSvcCard">
       <div class="card-h"><h3><svg class="ic"><use href="#i-wrench"/></svg>Next service</h3><button class="link" data-go="service">Manage</button></div>
@@ -141,17 +154,20 @@
   <section id="tab-service" class="tab">
     <h2 class="h-title"><svg class="ic lg"><use href="#i-wrench"/></svg>Service &amp; tyres</h2>
     <div class="glass card" id="vehCard">
-      <div class="card-h"><h3><svg class="ic"><use href="#i-ride"/></svg>Vehicle</h3><button id="vNew" class="ghost small" type="button">Add vehicle</button></div>
+      <div class="card-h"><h3><svg class="ic"><use href="#i-ride"/></svg>Vehicle</h3><div class="acts"><button id="vEdit" class="ghost small" type="button">Edit vehicle</button><button id="vNew" class="ghost small" type="button">Add vehicle</button></div></div>
       <label>Active vehicle<select id="vSel" aria-label="Active vehicle"></select></label>
       <div class="odo-line">Odometer <b id="odo">0</b> km <small class="hint">(tracked rides add automatically)</small></div>
+      <div id="vOk" class="hint okc" role="status" aria-live="polite"></div>
       <details id="vehDetails"><summary id="vfSummary">Vehicle profile (type, make, model, year, odometer, fuel)</summary>
-      <form id="vehForm">
+      <form id="vehForm" novalidate>
         <h4 id="vfTitle">Vehicle profile</h4>
         <div class="row"><label>Type<select id="vType" aria-label="Vehicle type"><option value="bike">Bike</option><option value="car">Car</option></select></label>
           <label>Fuel<select id="vFuel" aria-label="Fuel type"></select></label></div>
+        <label>Name / nickname (optional)<input id="vName" maxlength="40" placeholder="e.g. Thunder, Dad's car" autocomplete="off"></label>
         <div class="row"><label>Make<input id="vMake" maxlength="40" placeholder="e.g. Honda" autocomplete="off"></label><label>Model<input id="vModel" maxlength="40" placeholder="e.g. CB350" autocomplete="off"></label></div>
         <div class="row"><label>Year<input id="vYear" type="number" inputmode="numeric" min="1950" placeholder="2021"></label><label>Current odometer (km)<input id="vOdo" type="number" inputmode="numeric" min="0" placeholder="12345"></label></div>
         <div id="vErr" class="form-err" role="alert" hidden></div>
+        <small class="hint">Editing keeps this vehicle's service schedule, service history, tyres, fuel log and rides exactly as they are.</small>
         <div class="row"><button class="primary" id="vSave">Save vehicle</button><button type="button" id="vDel" class="ghost" hidden>Delete vehicle</button></div>
       </form></details>
     </div>
@@ -236,6 +252,46 @@
     </div>
   </section>
 
+  <section id="tab-weather" class="tab" aria-label="Weather">
+    <h2 class="h-title"><svg class="ic lg"><use href="#i-cloud"/></svg>Weather <span class="badge">OPEN-METEO</span></h2>
+    <div class="glass card" id="wxRouteCard">
+      <div class="card-h"><h3><svg class="ic"><use href="#i-road"/></svg>Along your route</h3><button id="wxRefresh" class="ghost small" type="button">Refresh</button></div>
+      <div id="wxStatus" class="hint" role="status" aria-live="polite"></div>
+      <div id="wxAlert"></div>
+      <div id="wxSamples"></div>
+    </div>
+    <div class="glass card" id="wxDestCard">
+      <div class="card-h"><h3><svg class="ic"><use href="#i-flag"/></svg>Destination forecast</h3></div>
+      <div id="wxDest"></div>
+    </div>
+    <div class="glass card" id="wxHereCard">
+      <div class="card-h"><h3><svg class="ic"><use href="#i-pin"/></svg>Where I am</h3><button id="wxHereBtn" class="ghost small" type="button">Use my location</button></div>
+      <div id="wxHere"></div>
+    </div>
+    <small class="hint">Forecasts: Open-Meteo.com (free, no key; models are approximate, not a safety service). The route is the one from the Group tab (OSRM car route); samples assume you leave now. Last good answer is kept for offline use.</small>
+  </section>
+
+  <section id="tab-fuel" class="tab" aria-label="Fuel log">
+    <h2 class="h-title"><svg class="ic lg"><use href="#i-fuel"/></svg>Fuel &amp; mileage</h2>
+    <div class="glass card">
+      <div class="odo-line" id="fuelVeh"></div>
+      <div id="fuelSummary" class="kv"></div>
+      <small class="hint">Mileage uses the full-tank to full-tank method: tick &ldquo;filled to full&rdquo; each time, so the litres bought between two full fills give the km/l. Part fills still count toward cost.</small>
+    </div>
+    <form id="fuelForm" class="glass card" novalidate>
+      <h3 id="fuelFormTitle">Add a fill-up</h3>
+      <div class="row"><label>Date<input id="fDate" type="date" required></label><label>Odometer (km)<input id="fOdo" type="number" min="0" step="1" inputmode="numeric" required></label></div>
+      <div class="row"><label>Litres<input id="fLitres" type="number" min="0.01" step="0.01" inputmode="decimal" required></label><label>Total paid (₹)<input id="fTotal" type="number" min="0" step="0.01" inputmode="decimal" required></label></div>
+      <label>Place (optional)<input id="fPlace" maxlength="60" placeholder="e.g. HP pump, Lonavala"></label>
+      <label class="chk"><input id="fFull" type="checkbox" checked> Filled to full</label>
+      <div id="fErr" class="warn-txt" role="alert" hidden></div>
+      <div class="row"><button class="primary" id="fSave">Save fill-up</button><button type="button" id="fCancel" class="ghost" hidden>Cancel edit</button></div>
+    </form>
+    <div class="glass card"><div class="card-h"><h3>Fill-ups</h3></div><div id="fuelList"></div></div>
+    <div class="glass card"><div class="card-h"><h3><svg class="ic"><use href="#i-pin"/></svg>Stops</h3><button id="stopNow" class="ghost small" type="button">Log a stop now</button></div><div id="stopList"></div>
+      <small class="hint">After a ride RiderKit asks &ldquo;What was this stop?&rdquo; for each pause of 3+ minutes it noticed.</small></div>
+  </section>
+
   <section id="tab-me" class="tab">
     <h2 class="h-title"><svg class="ic lg"><use href="#i-sos"/></svg>SOS &amp; settings</h2>
     <form id="setForm" class="glass card">
@@ -247,6 +303,13 @@
       <button class="primary">Save</button>
       <div id="setMsg" class="hint"></div>
     </form>
+    <div class="glass card" id="backupCard">
+      <h3><svg class="ic"><use href="#i-save"/></svg>Backup &amp; restore</h3>
+      <small class="hint">One JSON file with all your rides (incl. photos), vehicles, service, tyres, documents, contacts, fuel log, stops and settings. Stored only on this device until you save the file somewhere. The file is not encrypted.</small>
+      <div class="row"><button id="bkExport" class="primary" type="button"><svg class="ic"><use href="#i-down"/></svg>Export backup</button><button id="bkImportBtn" class="ghost" type="button"><svg class="ic"><use href="#i-up"/></svg>Import backup</button></div>
+      <input id="bkFile" type="file" accept="application/json,.json" hidden aria-label="Backup file to import">
+      <div id="bkMsg" class="hint" role="status" aria-live="polite"></div>
+    </div>
     <div class="glass card" id="aboutCard"><b>About RiderKit</b><br>
       <small>RiderKit is <b>not</b> a certified safety device. Crash alert is experimental and may miss a crash or trigger falsely. Your data stays on this device.</small><br>
       <a id="privacyLink" href="store/privacy-policy.html" target="_blank" rel="noopener">Privacy policy</a></div>
@@ -268,8 +331,15 @@
 </div>
 
 <div id="detail" hidden></div>
+<div id="stopAsk" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="stopAskT">
+  <div class="glass sheetbox"><h3 id="stopAskT">What was this stop?</h3><p id="stopAskInfo" class="hint"></p>
+    <div id="stopKinds" class="chips"></div>
+    <div class="row"><button id="stopSkip" class="ghost" type="button">Skip</button></div></div>
+</div>
 
 <div id="moreSheet" class="glass sheet" hidden role="menu" aria-label="More">
+  <button data-tab="weather" role="menuitem"><svg class="ic"><use href="#i-cloud"/></svg>Weather</button>
+  <button data-tab="fuel" role="menuitem"><svg class="ic"><use href="#i-fuel"/></svg>Fuel</button>
   <button data-tab="docs" role="menuitem"><svg class="ic"><use href="#i-doc"/></svg>Docs</button>
   <button data-tab="help" role="menuitem"><svg class="ic"><use href="#i-help"/></svg>Help</button>
   <button data-tab="group" role="menuitem"><svg class="ic"><use href="#i-group"/></svg>Group</button>

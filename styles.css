@@ -147,3 +147,21 @@ nav button.on::after{content:"";position:absolute;top:2px;width:26px;height:3px;
 @media (prefers-contrast:more){:root{--line:rgba(160,200,255,.55);--mut:#c4d2ea}}
 
 details summary{min-height:var(--tap);display:flex;align-items:center;cursor:pointer;color:var(--cy);font-weight:700;list-style:none}details summary::-webkit-details-marker{display:none}details summary::before{content:'+';margin-right:10px;font-size:20px}details[open] summary::before{content:'\2212'}
+
+/* v5 stage 1: weather, fuel, backup, stop prompt */
+.wx-now{display:flex;gap:14px;align-items:center}.wx-ic{width:64px;height:64px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,rgba(34,230,255,.2),transparent 70%);border:1px solid rgba(34,230,255,.4);box-shadow:var(--glow-cy);color:var(--cy)}
+.wx-ic .ic{width:34px;height:34px;margin:0}.wx-ic.rain,.wx-ic.storm{color:var(--mg);border-color:rgba(217,70,239,.55);box-shadow:0 0 16px rgba(217,70,239,.45)}.wx-ic.sun{color:var(--am);border-color:rgba(255,157,46,.5);box-shadow:var(--glow-am)}
+.wx-t{font-size:34px;font-weight:800;font-style:normal;font-variant-numeric:tabular-nums}.wx-tx{flex:1;min-width:0}
+.wx-alert{display:flex;gap:10px;align-items:flex-start;padding:12px;border-radius:14px;margin:8px 0;background:rgba(62,232,160,.1);border:1px solid rgba(62,232,160,.45)}
+.wx-alert.rain,.wx-alert.wind{background:rgba(255,157,46,.12);border-color:rgba(255,157,46,.6)}.wx-alert.storm{background:rgba(255,77,106,.14);border-color:rgba(255,77,106,.7)}
+.wx-alert .ic{margin:2px 0 0}
+.wx-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--line)}.wx-row:first-child{border-top:0}
+.wx-row .ic{width:20px;height:20px}.wx-row.rain .ic,.wx-row.storm .ic{color:var(--mg)}.wx-row.sun .ic{color:var(--am)}
+.wx-days{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.wx-day{text-align:center;padding:10px 4px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--line);font-size:13px}.wx-day b{display:block}.wx-day .ic{margin:2px 0;width:26px;height:26px}
+.stale{color:var(--am);font-weight:700}
+.chk{display:flex;align-items:center;gap:10px;color:var(--tx);font-size:15px;min-height:48px}.chk input{width:24px;min-height:24px;height:24px;margin:0;accent-color:var(--cy)}
+.warn-txt{color:var(--red);font-weight:700;margin:6px 0}
+.modal{position:fixed;inset:0;z-index:2500;background:rgba(2,4,10,.78);display:flex;align-items:flex-end;justify-content:center;padding:14px}
+.sheetbox{width:100%;max-width:420px;padding:18px;margin-bottom:calc(14px + env(safe-area-inset-bottom))}
+.chips{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.chips button{min-height:52px;font-size:14px}
+.fuel-item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}.fuel-item:first-child{border-top:0}.fuel-item .acts{display:flex;gap:6px}
