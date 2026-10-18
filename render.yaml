@@ -28,3 +28,17 @@ services:
         sync: false
       - key: VAPID_SUBJECT      # optional contact URL/mailto for push services (default https://riderkit.onrender.com)
         sync: false
+      - key: COMMUNITY            # set to 1 to switch the community on (needs DATABASE_URL; refuses to start on the JSON file in production)
+        sync: false
+      - key: COMMUNITY_NEW_ACCOUNT_HOURS   # optional, default 24: accounts younger than this get half rate limits and cannot post pictures publicly (0 = off)
+        sync: false
+      - key: IMAGE_S3_ENDPOINT    # photos: S3-compatible store, e.g. https://s3.us-west-004.backblazeb2.com (Backblaze B2, no card needed)
+        sync: false
+      - key: IMAGE_S3_REGION      # e.g. us-west-004
+        sync: false
+      - key: IMAGE_S3_BUCKET      # private bucket name
+        sync: false
+      - key: IMAGE_S3_KEY_ID      # application key ID (bucket-scoped key)
+        sync: false
+      - key: IMAGE_S3_SECRET      # application key secret
+        sync: false

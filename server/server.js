@@ -5,7 +5,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
 const { sanitize, FeedbackStore, safeEq } = require('./feedback');
 const { PushService } = require('./push'), { PinStore, PinError, TYPES: PIN_TYPES } = require('./pins'), { LiveStore, LiveError } = require('./live');
-const { Community } = require('./community'), { makeCommunityApi } = require('./community-api');
+const { Community } = require('./community'); require('./community-posts'); const { makeCommunityApi } = require('./community-api');
 const { Accounts } = require('./auth'), { openKV } = require('./kv'), { makeMailer } = require('./mailer'), { makeSms } = require('./sms');
 const ROOT = path.resolve(__dirname, '..');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
@@ -20,8 +20,8 @@ function createServer(opts = {}) {
   // Community (profiles, feed, clubs, chat). Needs durable storage in production: the JSON file on Render free is wiped on every restart, so it refuses to start there unless COMMUNITY_ALLOW_EPHEMERAL=1.
   let _comm; const communityOn = () => opts.community !== undefined ? !!opts.community : process.env.COMMUNITY === '1' || (process.env.NODE_ENV !== 'production' && process.env.COMMUNITY !== '0');
   const community = async () => { if (_comm !== undefined) return _comm; if (!communityOn()) return (_comm = null); const A = accounts(), kv = getKV();
-    _comm = new Community({ kv, accounts: A, now: opts.now, adminToken, images: opts.images || null, opts: opts.communityOpts, limits: opts.communityLimits });
-    if (_comm.attachImages) _comm.attachImages(opts.images || null, process.env);
+    _comm = new Community({ kv, accounts: A, now: opts.now, adminToken, images: null, opts: opts.communityOpts, limits: opts.communityLimits });
+    if (_comm.attachImages) _comm.attachImages(opts.images, process.env);
     if (process.env.NODE_ENV === 'production' && kv.kind !== 'postgres' && process.env.COMMUNITY_ALLOW_EPHEMERAL !== '1') _comm.disabledReason = 'community needs DATABASE_URL (Postgres) in production; the JSON file is lost on every restart (set COMMUNITY_ALLOW_EPHEMERAL=1 to override for a throwaway test)';
     return _comm; };
   const deleteHook = async uid => { const C = await community(); if (C) await C.deleteUser(uid); }; if (acc && !acc.onDelete) acc.onDelete = deleteHook;
@@ -204,7 +204,7 @@ function createServer(opts = {}) {
   const timers = [setInterval(() => store.flush(), opts.flushMs || 1000), setInterval(() => { store.sweep(); lim.gc(); if (acc) acc.sweep().catch(() => {}); }, opts.sweepMs || 60e3), setInterval(() => { push().sweep().catch(e => console.error('push sweep', e.message)); pins().sweep().catch(() => {}); }, opts.pushSweepMs || 30 * 60e3), setInterval(() => live.sweep(), 60e3)];
   timers.forEach(t => t.unref());
   server.on('close', () => timers.forEach(clearInterval));
-  server.store = store; server.live = live; server.push = () => push(); return server;
+  server.communityInstance = () => _comm; server.store = store; server.live = live; server.push = () => push(); return server;
 }
 if (require.main === module) { const port = +process.env.PORT || 8080; createServer().listen(port, '0.0.0.0', () => console.log('RiderKit server on :' + port)); }
 module.exports = { createServer };

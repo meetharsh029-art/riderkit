@@ -58,6 +58,71 @@
     box.append(h('div', { class: 'glass card' }, h('h3', {}, 'Your data'), h('div', { class: 'row' }, h('button', { class: 'ghost', id: 'cmExport', onclick: async () => { const d = await run(() => api('GET', '/export')); if (!d) return; const b = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }), a = h('a', { href: URL.createObjectURL(b), download: 'riderkit-community-export.json' }); document.body.append(a); a.click(); a.remove(); } }, 'Download my community data'), h('button', { class: 'ghost', onclick: () => goTab('me') }, 'Delete account')),
       h('p', { class: 'hint' }, h('a', { href: 'community-rules.html', target: '_blank', rel: 'noopener' }, 'Community rules'), ' \u00b7 ', h('a', { href: 'store/privacy-policy.html', target: '_blank', rel: 'noopener' }, 'Privacy policy'))));
     return box; }
+
+  // ---- images: client-side downscale + metadata strip (canvas re-encode drops EXIF incl. GPS); the server checks everything again
+  const sniffMime = async f => { const b = new Uint8Array(await f.slice(0, 12).arrayBuffer()); if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg'; if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png'; if (String.fromCharCode(...b.slice(0, 4)) === 'RIFF' && String.fromCharCode(...b.slice(8, 12)) === 'WEBP') return 'image/webp'; return null; };
+  const MAX_SIDE = 1600, TARGET = 300 * 1024, HARD = 900 * 1024; CM.MAX_SIDE = MAX_SIDE;
+  async function shrinkImage(file) {
+    if (file.size > 25e6) throw new Error('That photo is too big (25 MB max before shrinking).');
+    const mime = await sniffMime(file); if (!mime && !/^image\/(heic|heif)$/i.test(file.type)) throw new Error('Only JPEG, PNG or WebP photos are supported.');
+    let bmp; try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch { throw new Error('Could not read that photo on this device.'); }
+    const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height)), w = Math.max(16, Math.round(bmp.width * k)), h = Math.max(16, Math.round(bmp.height * k)), c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(bmp, 0, 0, w, h); if (bmp.close) bmp.close();
+    let q = 0.86, blob; for (let i = 0; i < 6; i++) { blob = await new Promise(r => c.toBlob(r, 'image/jpeg', q)); if (!blob) throw new Error('Could not encode the photo.'); if (blob.size <= TARGET) break; q -= 0.12; }
+    if (blob.size > HARD) throw new Error('That photo is still too large after shrinking; pick another.'); return { blob, w, h }; }
+  CM.shrinkImage = shrinkImage;
+  // ---- composer (a ride recap card and/or up to 3 photos + caption)
+  const DR = CM.draft = { card: null, stats: null, photos: [], caption: '', vis: '', busy: false };
+  const fmtStats = s => s ? [s.km != null ? s.km + ' km' : '', s.dur != null ? (s.dur >= 60 ? Math.floor(s.dur / 60) + ' h ' + (s.dur % 60) + ' min' : s.dur + ' min') : '', s.date || '', s.vehicle || ''].filter(Boolean).join(' \u00b7 ') : ''; CM.fmtStats = fmtStats;
+  CM.openComposer = d => { if (d) { DR.card = d.card ? { blob: d.card, url: URL.createObjectURL(d.card) } : DR.card; DR.stats = d.stats || DR.stats; } CM.section = 'compose'; document.querySelector('[data-tab="community"]').click(); setTimeout(() => CM.me ? render() : load(), 50); };
+  function composeSection() {
+    const p = CM.me.profile, box = h('div', { class: 'glass card' }); const maxP = (CM.cfg.images && CM.cfg.images.maxPhotos) || 3, canImg = !!CM.cfg.images;
+    const cap = h('textarea', { id: 'cmCaption', rows: '3', maxlength: '500', placeholder: 'Write a caption (no links or phone numbers)', 'aria-label': 'Caption', oninput: e => { DR.caption = e.target.value; } }); cap.value = DR.caption;
+    const vis = h('select', { id: 'cmVis', 'aria-label': 'Who can see this post', onchange: e => { DR.vis = e.target.value; } }, [['followers', 'Followers only'], ...(p.visibility === 'public' ? [['public', 'Public (everyone in the community)']] : [])].map(([v, t]) => h('option', { value: v, selected: (DR.vis || (p.visibility === 'public' ? 'public' : 'followers')) === v }, t)));
+    const thumbs = h('div', { class: 'cm-thumbs' }); const drawThumbs = () => { thumbs.textContent = ''; if (DR.card) thumbs.append(h('div', { class: 'cm-th' }, h('img', { src: DR.card.url, alt: 'Ride card' }), h('button', { class: 'ghost', 'aria-label': 'Remove ride card', onclick: () => { DR.card = null; DR.stats = null; render(); } }, '\u00d7')));
+      DR.photos.forEach((ph, i) => thumbs.append(h('div', { class: 'cm-th' }, h('img', { src: ph.url, alt: 'Photo ' + (i + 1) }), h('button', { class: 'ghost', 'aria-label': 'Remove photo ' + (i + 1), onclick: () => { DR.photos.splice(i, 1); drawThumbs(); } }, '\u00d7')))); }; drawThumbs();
+    const file = h('input', { type: 'file', id: 'cmFile', accept: 'image/jpeg,image/png,image/webp', multiple: true, 'aria-label': 'Add photos', hidden: true, onchange: async e => { for (const f of [...e.target.files]) { if (DR.photos.length >= maxP) { toast('Up to ' + maxP + ' photos per post.', true); break; } const r = await run(() => shrinkImage(f)); if (r) DR.photos.push({ blob: r.blob, url: URL.createObjectURL(r.blob), w: r.w, h: r.h }); } e.target.value = ''; drawThumbs(); } });
+    const post = h('button', { class: 'primary', id: 'cmPost', onclick: async () => { if (DR.busy) return; DR.busy = true; post.disabled = true; post.textContent = 'Posting...';
+      try { const ids = []; let cardId = null; if (DR.card) cardId = DR.card.id || (DR.card.id = (await api('POST', '/upload?kind=card', DR.card.blob, DR.card.blob.type || 'image/jpeg')).id); for (const ph of DR.photos) ids.push(ph.id || (ph.id = (await api('POST', '/upload?kind=photo', ph.blob, 'image/jpeg')).id)); // uploaded once; a failed post (e.g. a link in the caption) reuses the ids
+        const r = await api('POST', '/posts', { caption: cap.value, card: cardId, photos: ids, stats: DR.stats, vis: vis.value }); DR.card = null; DR.stats = null; DR.photos = []; DR.caption = ''; CM.section = 'feed'; FD.loaded = false; toast(r.held ? 'Posted, but held for review before others can see it.' : 'Posted!'); render();
+      } catch (e) { toast(e.message, true); post.disabled = false; post.textContent = 'Post'; } finally { DR.busy = false; } } }, 'Post');
+    box.append(h('h3', {}, 'New post'), DR.stats ? h('div', { class: 'hint', id: 'cmStatsLine' }, 'Ride summary: ' + fmtStats(DR.stats)) : null, thumbs, cap,
+      canImg ? h('div', { class: 'row' }, h('button', { class: 'ghost', id: 'cmAddPhoto', onclick: () => file.click() }, 'Add photos (' + DR.photos.length + '/' + maxP + ')'), file) : h('p', { class: 'hint' }, 'Photo uploads are not available on this server yet.'),
+      h('p', { class: 'cm-warn' }, 'Photos can show your home, street signs or number plates. Check before you post. RiderKit shrinks photos and removes hidden location data (EXIF), but cannot blur plates. Posts never include GPS points.'),
+      h('label', { class: 'cm-f' }, h('span', {}, 'Audience'), vis), p.visibility !== 'public' ? h('p', { class: 'hint' }, 'Your profile is private, so posts go to your followers only. Make it public in Me to post publicly.') : null,
+      h('p', { class: 'hint' }, 'By posting you agree to the ', h('a', { href: 'community-rules.html', target: '_blank', rel: 'noopener' }, 'community rules'), '.'), post); return box; }
+  CM.sections.push({ id: 'compose', label: 'Post', render: composeSection });
+  // ---- feed
+  const FD = CM.feed = { scope: 'global', posts: [], next: null, loading: false, loaded: false, error: '' };
+  function openImage(url) { const box = h('div', { class: 'cm-modal', role: 'dialog', 'aria-label': 'Photo', onclick: () => box.remove() }, h('img', { src: url, alt: 'Photo', style: 'max-width:100%;max-height:90vh;border-radius:12px' })); document.body.append(box); }
+  CM.extraActions = []; // later stages add [fn(post) => node]
+  function postCard(p, onChange) {
+    const st = fmtStats(p.stats), card = h('article', { class: 'glass cm-post', 'data-post': p.id });
+    const menu = h('div', { class: 'cm-actions' }); card.append(h('div', { class: 'cm-meta' }, avatar(p.author.avatar), h('div', {}, h('b', {}, p.author.name), h('small', {}, '@' + p.author.handle + ' \u00b7 ' + fmtAgo(p.at) + (p.vis === 'followers' ? ' \u00b7 followers' : p.vis === 'club' ? ' \u00b7 club' : '')))));
+    if (p.state) card.append(h('div', { class: 'cm-warn' }, p.state === 'held' ? 'Held for review: only you can see this.' : 'Hidden by moderation: only you can see this.'));
+    if (p.images.card) card.append(h('img', { class: 'cm-img', src: base() + p.images.card, alt: 'Ride card', loading: 'lazy', onclick: () => openImage(base() + p.images.card) })); if (st) card.append(h('div', { class: 'hint' }, st));
+    if (p.caption) card.append(h('div', { class: 'cm-caption' }, p.caption)); if (p.images.photos.length) card.append(h('div', { class: 'cm-photos' }, p.images.photos.map((u, i) => h('img', { src: base() + u, alt: 'Photo ' + (i + 1), loading: 'lazy', onclick: () => openImage(base() + u) }))));
+    for (const f of CM.extraActions) { const n = f(p, card, onChange, menu); if (n) menu.append(n); }
+    if (p.mine) menu.append(h('button', { class: 'ghost small', 'data-act': 'delete', onclick: () => CM.confirm('Delete this post and its photos?', 'Delete', async () => { if (await run(() => api('POST', '/posts/' + p.id + '/delete'), 'Post deleted')) onChange(p, null); }) }, 'Delete'));
+    else { menu.append(h('button', { class: 'ghost small', 'data-act': 'report', onclick: () => CM.report('post', p.id, 'post') }, 'Report'), h('button', { class: 'ghost small', 'data-act': 'block', onclick: () => CM.confirm('Block @' + p.author.handle + '? You will not see each other.', 'Block', async () => { if (await run(() => api('POST', '/block', { handle: p.author.handle }), 'Blocked')) { FD.loaded = false; render(); } }) }, 'Block')); }
+    card.append(menu); return card; }
+  CM.postCard = postCard;
+  async function loadFeed(more) { if (FD.loading) return; FD.loading = true; if (!more) { FD.posts = []; FD.next = null; } try { const r = await api('GET', '/feed?scope=' + FD.scope + (more && FD.next ? '&before=' + encodeURIComponent(FD.next) : '') + '&limit=20'); FD.posts.push(...r.posts); FD.next = r.next; FD.error = ''; } catch (e) { FD.error = e.message; } FD.loaded = true; FD.loading = false; if (CM.section === 'feed') render(); }
+  function feedSection() {
+    const box = h('div', {}); if (!FD.loaded && !FD.loading) loadFeed(false);
+    box.append(h('div', { class: 'row' }, ['global', 'following'].map(s => h('button', { class: (FD.scope === s ? 'primary' : 'ghost') + ' small', id: 'cmScope-' + s, onclick: () => { FD.scope = s; FD.loaded = false; render(); } }, s === 'global' ? 'Everyone' : 'Following'))));
+    const list = h('div', { id: 'cmFeed' }); if (FD.error) list.append(h('p', { class: 'hint' }, FD.error));
+    for (const p of FD.posts) list.append(postCard(p, (old, nw) => { FD.posts = FD.posts.filter(x => x.id !== old.id); render(); })); if (FD.loading) list.append(h('p', { class: 'hint' }, 'Loading...'));
+    else if (!FD.posts.length && FD.loaded) list.append(h('div', { class: 'glass card', id: 'cmEmpty' }, h('p', {}, FD.scope === 'global' ? 'No public posts yet. Be the first: finish a ride, open it in History and tap "Share recap card", then "Post to community".' : 'Nothing from riders you follow yet.'), h('button', { class: 'primary', onclick: () => { CM.section = 'compose'; render(); } }, 'Write a post')));
+    if (FD.next && !FD.loading) list.append(h('button', { class: 'ghost', id: 'cmMore', onclick: () => loadFeed(true) }, 'Load more')); box.append(list); return box; }
+  CM.sections.unshift({ id: 'feed', label: 'Feed', render: feedSection });
+  // recap card -> "Post to community" (button added to the existing recap dialog when it appears)
+  const addRecapBtn = () => { const m = document.getElementById('recapModal'); if (!m || m.querySelector('#rcPost')) return; const box = m.querySelector('.recap-box'); if (!box) return;
+    const btn = h('button', { class: 'ghost', id: 'rcPost', type: 'button', onclick: async () => { const RC = window.__rkRC; if (!RC || !RC.canvas) return; let blob = null; for (const q of [0.9, 0.8, 0.65]) { blob = await new Promise(r => RC.canvas.toBlob(r, 'image/jpeg', q)); if (blob && blob.size <= 700 * 1024) break; } const ride = RC.ride || {};
+      const d = new Date(ride.start || Date.now()), pad = n => String(n).padStart(2, '0'); const stats = { km: Math.round((ride.dist || 0) / 100) / 10, dur: Math.round((ride.dur || 0) / 60), date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) }; if (ride.vehicleName) stats.vehicle = String(ride.vehicleName).slice(0, 40);
+      const cl = m.querySelector('#rcClose'); if (cl) cl.click(); CM.openComposer({ card: blob, stats }); } }, 'Post to community'); const share = box.querySelector('#rcShare'); (share && share.parentNode ? share.parentNode : box).append(btn); };
+  new MutationObserver(addRecapBtn).observe(document.body, { childList: true }); addRecapBtn();
+
   CM.sections.push({ id: 'profile', label: 'Me', render: profileSection });
 
   function render() {

@@ -37,7 +37,7 @@ const MAXT = 9999999999999;
 class Community {
   constructor({ kv, accounts, images = null, now = () => Date.now(), adminToken = () => '', opts = {}, limits = {} }) {
     this.kv = kv; this.accounts = accounts; this.images = images; this.now = now; this.adminToken = adminToken;
-    this.o = Object.assign({ newAccountMs: 24 * 36e5, reportHide: 3, newAcctDays: 7, maxBlocks: 500, maxFollowing: 2000, quotaBytes: 50e6, maxPostPhotos: 3, imgUrlTtlMs: 6 * 36e5, uploadTtlMs: 864e5, clubCap: 600, dmCap: 1000, groupMax: 30, clubMax: 500 }, opts);
+    this.o = Object.assign({ newAccountMs: (process.env.COMMUNITY_NEW_ACCOUNT_HOURS !== undefined && process.env.COMMUNITY_NEW_ACCOUNT_HOURS !== '' ? +process.env.COMMUNITY_NEW_ACCOUNT_HOURS : 24) * 36e5, reportHide: 3, newAcctDays: 7, maxBlocks: 500, maxFollowing: 2000, quotaBytes: 50e6, maxPostPhotos: 3, imgUrlTtlMs: 6 * 36e5, uploadTtlMs: 864e5, clubCap: 600, dmCap: 1000, groupMax: 30, clubMax: 500 }, opts);
     this.L = Object.assign({}, L0, limits); this.lim = new Limiter(now); this.locks = new Map(); this.cascades = []; this.routes = []; this.seq = 0; this._init();
   }
   _init() {}
@@ -142,7 +142,7 @@ class Community {
     if (act === 'hide' || act === 'restore') { if (!t || !this.setState) throw new HttpError(404, 'not found'); await this.setState(kind, t.key, act === 'hide' ? 'hidden' : 'ok', 'admin'); }
     else if (act === 'remove') { if (t && this.removeContent) await this.removeContent(kind, t.key); }
     else if (act !== 'dismiss') throw new HttpError(400, 'unknown action');
-    for (const [k, rid] of await this.kv.range('crept', { prefix: kind + ':' + (t ? t.key : id) + ':', limit: 200 })) { const r = await this.kv.get('crep', rid); if (r && r.state === 'open') { r.state = act === 'dismiss' ? 'dismissed' : 'actioned'; r.action = act; if (act === 'remove') { r.snap = null; r.note = ''; } await this.kv.set('crep', rid, r); } }
+    for (const [k, rid] of await this.kv.range('crept', { prefix: kind + ':' + (t ? t.key : id) + ':', limit: 200 })) { const r = await this.kv.get('crep', rid); if (r) { if (r.state === 'open') { r.state = act === 'dismiss' ? 'dismissed' : 'actioned'; r.action = act; } if (act === 'remove') { r.snap = null; r.note = ''; } await this.kv.set('crep', rid, r); } }
     await this.modlog(act, kind, t ? t.key : id); return { ok: true, result }; }
   async modlog(action, kind, target) { const d = new Date(this.now()); await this.kv.set('cmodlog', d.toISOString().slice(0, 7) + ':' + this.tkey(), { at: this.now(), action, kind, target }); }
   async adminUser(handle) { const p = await this.profByHandle(handle); if (!p) throw new HttpError(404, 'rider not found'); return { id: p.id, handle: p.handle, state: p.state, counts: p.counts, createdAt: p.createdAt, visibility: p.visibility, reportsAgainst: (await this.kv.range('crepown', { prefix: p.id + ':', limit: 200 })).length }; }
