@@ -141,7 +141,8 @@ async function openRide(id) {
   <label>Add photos <input id="dPhoto" type="file" accept="image/*" multiple></label>
   <div id="dPhotos"></div>
   <div class="row"><button id="dSave" class="primary">Save notes</button><button id="dDel" class="danger">Delete ride</button></div>
-  <button id="dGpx" class="ghost" style="margin-top:8px">Export GPX</button>`;
+  <button id="dGpx" class="ghost" style="margin-top:8px">Export GPX</button>
+  <button id="dRecap" class="ghost" style="margin-top:8px">Share recap card</button>`;
   const dm = L.map('dmap'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(dm);
   if (r.points.length > 1) { const pl = L.polyline(r.points.map(p => [p.lat, p.lon]), { color: cssv('--m-line'), weight: 5, className: 'glow' }).addTo(dm); dm.fitBounds(pl.getBounds()); } else dm.setView([20.59, 78.96], 4);
   const drawPh = () => { urls.forEach(URL.revokeObjectURL); urls = [];
@@ -151,6 +152,7 @@ async function openRide(id) {
   $('dSave').onclick = async () => { r.notes = $('dNotes').value; await put('rides', r); $('dSave').textContent = 'Saved ✓'; };
   $('dDel').onclick = async () => { if (confirm('Delete this ride?')) { await del('rides', r.id); close(); renderRides(); } };
   $('dGpx').onclick = () => downloadGPX(r);
+  $('dRecap').onclick = async () => { try { const vs = await getVehicles(); const v = vs.find(x => x.id === (r.vehicleId || vs[0].id)); window.__rkRecap && window.__rkRecap(Object.assign({}, r, { vehicleName: v ? C.vehicleName(v) : '' })); } catch (e) { console.warn(e); } };
   const close = () => { dm.remove(); d.hidden = true; renderRides(); };
   $('dClose').onclick = close;
 }
@@ -375,6 +377,7 @@ function gApply(snap) {
   if (snap.closed) { gForgetLast(); gStop(CLOSE_TXT[snap.closed] || 'This group has closed.'); return; }
   { const me = G.sess && snap.members.find(m => m.id === G.sess.memberId); if (me && me.ended) { gStop('Your trip has ended. Tap Rejoin to continue.'); return; } }
   G.snap = snap; G.offset = snap.now - Date.now(); renderGroup(); maybeRoute(); renderAlerts(true);
+  try { window.__rkOnSnap && window.__rkOnSnap(snap); } catch (e) { console.warn(e); }
 }
 function labelIcon(m, me, off) { return L.divIcon({ className: '', iconSize: [16, 16], iconAnchor: [8, 8],
   html: `<div class="gdot${me ? ' me' : ''}${off ? ' off' : ''}${m.alert ? ' alert' : ''}" style="background:${esc(m.color)}">${m.alert ? '!' : ''}<span class="glabel">${esc(m.name)}${m.alert ? ' · ' + esc(C.alertLabel(m.alert.type)) : ''}</span></div>` }); }

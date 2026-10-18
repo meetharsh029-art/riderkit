@@ -131,6 +131,7 @@ class GroupStore {
   subscribe(code, f) { let s = this.listeners.get(code); if (!s) this.listeners.set(code, s = new Set()); s.add(f); return () => s.delete(f); }
   flush() { for (const g of this.groups.values()) if (g.dirty) { g.dirty = false; const snap = this.snapshot(g); for (const f of this.listeners.get(g.code) || []) f(snap); } }
 }
+require('./trip')(GroupStore, { HttpError, cleanName, num });
 // Minimal sliding-window limiter keyed by string.
 class Limiter {
   constructor(now = () => Date.now()) { this.now = now; this.h = new Map(); }

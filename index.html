@@ -287,6 +287,15 @@
         <div id="gRouteInfo"></div><ol id="gSteps" class="steps"></ol>
         <small class="hint">Routes: OSRM public demo server (car profile, best effort, ~1 request/s, not for heavy use). Places: Nominatim. © OpenStreetMap contributors.</small>
       </div>
+      <div class="glass card" id="stopCard"><h3>Stops</h3><div id="stopList" aria-live="polite"></div>
+        <div class="row"><label>Request a stop<select id="stopType"></select></label><label>Note (optional)<input id="stopNote" maxlength="40" autocomplete="off"></label></div>
+        <button id="stopReq" class="primary small" type="button">Request a stop at my position</button><p id="stopMsg" class="hint" role="status"></p>
+        <small class="hint">The admin's stops are planned straight away; other riders' requests wait for the admin to plan them. Others can tap +1 if they need it too. Stops disappear after 12 hours or when marked done.</small></div>
+      <div class="glass card" id="expCard"><h3>Expenses</h3>
+        <form id="expForm"><div class="row"><label>Amount (&#8377;)<input id="expAmt" inputmode="decimal" autocomplete="off" placeholder="e.g. 450"></label><label>For<input id="expLbl" maxlength="40" autocomplete="off" placeholder="e.g. Petrol"></label></div>
+          <label>Paid by<select id="expPaid"></select></label><fieldset id="expWith" class="chips" aria-label="Shared between"></fieldset><button class="primary small">Add expense</button></form>
+        <p id="expMsg" class="hint" role="status"></p><div id="expList"></div><h4>Who owes whom</h4><div id="expSettle"></div>
+        <small class="hint">RiderKit only records the expenses and does the sums (shared equally between the riders ticked, to the paisa). It does not move money: settle up yourselves, for example by UPI. Expenses live only while the group exists and are deleted with it.</small></div>
       <h3>Riders</h3><div id="gRiders"></div>
       <div class="glass card" id="gLife"><h3 style="margin-top:0">Trip controls</h3><div id="gRole" class="hint"></div>
         <div class="acts"><button id="gEndTrip" class="ghost">End my trip</button><button id="gCancelGroup" class="danger" hidden>Cancel group for everyone</button><button id="gClaim" class="ghost" hidden>Take over as admin</button></div>

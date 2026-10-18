@@ -96,6 +96,43 @@
   function tileEvict(index, max) { const ks = Object.keys(index || {}); if (ks.length <= (max || TILE.max)) return []; ks.sort((a, b) => index[a].f - index[b].f); return ks.slice(0, ks.length - (max || TILE.max)); }
   const isTileUrl = u => /^https:\/\/tile\.openstreetmap\.org\/\d{1,2}\/\d+\/\d+\.png$/.test(u);
 
-  const api = { TILE, parseMaxAge, tileTtl, tileFresh, tileEvict, isTileUrl, hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
+  // ===== Stage 6: expenses (integer paise; RiderKit only calculates, it never moves money) =====
+  const hashN = str => { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; return h; };
+  function parseRupees(str) { const t = String(str == null ? '' : str).replace(/[\u20b9,\s]/g, ''); if (!/^\d{1,7}(\.\d{1,2})?$/.test(t)) return null; const p = Math.round(parseFloat(t) * 100); return p >= 1 && p <= 10000000 ? p : null; }
+  const fmtPaise = p => { const neg = p < 0; p = Math.abs(Math.round(p)); const r = Math.floor(p / 100), q = p % 100; return (neg ? '-' : '') + '\u20b9' + r.toLocaleString('en-IN') + (q ? '.' + String(q).padStart(2, '0') : ''); };
+  // shares of one expense: {memberId: paise}; sums to exactly amount; the leftover paise go to different people for different expenses (by id hash)
+  function shares(e) { const ids = [...new Set((e.with || []).map(String))].sort(); const n = ids.length; if (!n) return {}; const base = Math.floor(e.amount / n), rem = e.amount - base * n, off = hashN(String(e.id || '')) % n, out = {};
+    ids.forEach((id, i) => { out[id] = base + (((i - off + n) % n) < rem ? 1 : 0); }); return out; }
+  function balances(expenses) { const b = {}; for (const e of expenses || []) { if (!e || !Number.isInteger(e.amount) || e.amount <= 0 || !e.paidBy) continue; const sh = shares(e); if (!Object.keys(sh).length) continue; b[e.paidBy] = (b[e.paidBy] || 0) + e.amount; for (const [id, v] of Object.entries(sh)) b[id] = (b[id] || 0) - v; } return b; }
+  // minimal-ish settlement: repeatedly match the biggest debtor with the biggest creditor. Returns [{from,to,amount}] in paise.
+  function settleUp(bal) { const cr = [], db = []; for (const [id, v] of Object.entries(bal || {})) { if (v > 0) cr.push([id, v]); else if (v < 0) db.push([id, -v]); } const out = [];
+    while (cr.length && db.length) { cr.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)); db.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)); const a = Math.min(cr[0][1], db[0][1]); out.push({ from: db[0][0], to: cr[0][0], amount: a }); cr[0][1] -= a; db[0][1] -= a; if (!cr[0][1]) cr.shift(); if (!db[0][1]) db.shift(); } return out; }
+  const STOP_LABEL = { fuel: 'Fuel', food: 'Food / tea', rest: 'Rest', washroom: 'Washroom', photo: 'Photo stop', other: 'Other' };
+
+  // ===== Stage 7: ride recap card (canvas). The route is drawn as a plain shape (no map tiles, no street names); start/end can be trimmed for privacy =====
+  const RECAP = { W: 1080, H: 1350, trimM: 300, maxPts: 400 };
+  function recapModel(ride, opts) {
+    opts = Object.assign({ hideEnds: true }, opts); ride = ride || {}; const pts = (ride.points || []).filter(p => p && Number.isFinite(p.lat) && Number.isFinite(p.lon)); let use = pts, note = '';
+    const seg = []; let total = 0; for (let i = 1; i < pts.length; i++) { const d = hav([pts[i - 1].lat, pts[i - 1].lon], [pts[i].lat, pts[i].lon]); seg.push(d); total += d; }
+    if (opts.hideEnds && pts.length > 1) { if (total < RECAP.trimM * 2 + 100) { use = []; note = 'Route hidden (ride too short to hide the start and end)'; } else { let a = 0, acc = 0; while (a < seg.length && acc < RECAP.trimM) acc += seg[a++]; let z = seg.length, acc2 = 0; while (z > a && acc2 < RECAP.trimM) acc2 += seg[--z]; use = pts.slice(a, z + 1); note = 'First and last 300 m hidden'; } }
+    if (use.length > RECAP.maxPts) { const step = (use.length - 1) / (RECAP.maxPts - 1); use = Array.from({ length: RECAP.maxPts }, (_, i) => use[Math.round(i * step)]); }
+    let shape = []; if (use.length > 1) { const lat0 = Math.min(...use.map(p => p.lat)), lat1 = Math.max(...use.map(p => p.lat)), lon0 = Math.min(...use.map(p => p.lon)), lon1 = Math.max(...use.map(p => p.lon)), k = Math.cos((lat0 + lat1) / 2 * Math.PI / 180);
+      const w = Math.max(1e-9, (lon1 - lon0) * k), h = Math.max(1e-9, lat1 - lat0), sc = 1 / Math.max(w, h); shape = use.map(p => [((p.lon - lon0) * k - w / 2) * sc, -((p.lat - lat0) - h / 2) * sc]); } // centred, longest side = 1, y down
+    const km = (Number(ride.dist) || 0) / 1000, dur = Number(ride.dur) || 0, d = new Date(ride.start || Date.now());
+    return { km: Math.round(km * 10) / 10, kmText: km >= 100 ? String(Math.round(km)) : km.toFixed(1), time: (dur >= 3600 ? Math.floor(dur / 3600) + ' h ' + String(Math.floor(dur % 3600 / 60)).padStart(2, '0') + ' m' : Math.max(0, Math.round(dur / 60)) + ' min'), avg: Math.round(Number(ride.avgSpeed) || 0), max: Math.round(Number(ride.maxSpeed) || 0),
+      date: d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] + ' ' + d.getFullYear(), shape, note, vehicle: String(ride.vehicleName || '').slice(0, 30), hidden: !!opts.hideEnds };
+  }
+  function drawRecap(ctx, m, W, H) { W = W || RECAP.W; H = H || RECAP.H; const F = 'Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#0f172a'); g.addColorStop(1, '#1e3a8a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#ffffff'; ctx.font = '700 54px ' + F; ctx.textAlign = 'left'; ctx.fillText('RiderKit', 80, 120); ctx.textAlign = 'right'; ctx.font = '500 40px ' + F; ctx.fillStyle = '#cbd5e1'; ctx.fillText(m.date, W - 80, 120);
+    const bx = 80, by = 190, bw = W - 160, bh = 640; ctx.fillStyle = 'rgba(255,255,255,0.07)'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 36); ctx.fill(); } else ctx.fillRect(bx, by, bw, bh);
+    if (m.shape.length > 1) { const pad = 70, s = Math.min(bw, bh) - pad * 2, cx = bx + bw / 2, cy = by + bh / 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 14; ctx.beginPath(); m.shape.forEach((p, i) => { const x = cx + p[0] * s, y = cy + p[1] * s; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+      const dot = (p, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx + p[0] * s, cy + p[1] * s, 20, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.stroke(); }; dot(m.shape[0], '#22c55e'); dot(m.shape[m.shape.length - 1], '#f97316'); }
+    else { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.font = '500 40px ' + F; ctx.fillText(m.note || 'No route recorded for this ride', W / 2, by + bh / 2); }
+    ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.font = '800 220px ' + F; ctx.fillText(m.kmText, W / 2, 1060); ctx.font = '600 52px ' + F; ctx.fillStyle = '#93c5fd'; ctx.fillText('kilometres' + (m.vehicle ? ' \u00b7 ' + m.vehicle : ''), W / 2, 1125);
+    const cols = [['TIME', m.time], ['AVG', m.avg + ' km/h'], ['MAX', m.max + ' km/h']]; cols.forEach((c, i) => { const x = W / 6 + i * W / 3; ctx.fillStyle = '#93c5fd'; ctx.font = '600 32px ' + F; ctx.fillText(c[0], x, 1205); ctx.fillStyle = '#fff'; ctx.font = '700 46px ' + F; ctx.fillText(c[1], x, 1262); });
+    ctx.fillStyle = '#94a3b8'; ctx.font = '500 28px ' + F; ctx.fillText(m.note ? m.note + ' \u00b7 riderkit.onrender.com' : 'riderkit.onrender.com', W / 2, 1316); }
+
+  const api = { RECAP, recapModel, drawRecap, parseRupees, fmtPaise, shares, balances, settleUp, STOP_LABEL, TILE, parseMaxAge, tileTtl, tileFresh, tileEvict, isTileUrl, hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
   if (typeof module !== 'undefined') module.exports = api; else root.Extra = api;
 })(typeof self !== 'undefined' ? self : this);

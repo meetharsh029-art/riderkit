@@ -17,7 +17,7 @@ function createServer(opts = {}) {
   let _kv = opts.kv || null; const getKV = () => _kv || (_kv = openKV(process.env)); // ONE kv instance shared by accounts, push and pins (FileKV must not be opened twice)
   let acc = opts.accounts || null; const accounts = () => acc || (acc = new Accounts({ kv: getKV(), mailer: makeMailer(process.env), sms: makeSms(process.env), limits: opts.authLimits }));
   const trust = opts.trustProxy ?? (process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY === '1' : process.env.NODE_ENV === 'production'); // default ON in production (behind Render's proxy)
-  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3], liveCreate: [6, 3600e3], liveUpdate: [1, 2000], liveRead: [40, 60e3], pinAdd: [5, 3600e3], pinAddIp: [12, 3600e3], pinVote: [60, 3600e3], pinReport: [10, 3600e3], pinRead: [60, 60e3], pushSync: [12, 60e3], pushTest: [3, 3600e3] }, opts.limits);
+  const L = Object.assign({ feedback: [5, 600e3], global: [300, 60e3], create: [10, 60e3], join: [30, 60e3], joinFail: [10, 600e3], loc: [1, 900], sse: [20, 60e3], alert: [3, 60e3], alertGroup: [20, 600e3], alertCancel: [6, 60e3], say: [8, 10e3], sayGroup: [60, 60e3], voice: [5, 30e3], voiceGroup: [30, 10 * 60e3], clipGet: [60, 60e3], lifecycle: [10, 60e3], expense: [10, 60e3], stopReq: [6, 60e3], stopAct: [30, 60e3], liveCreate: [6, 3600e3], liveUpdate: [1, 2000], liveRead: [40, 60e3], pinAdd: [5, 3600e3], pinAddIp: [12, 3600e3], pinVote: [60, 3600e3], pinReport: [10, 3600e3], pinRead: [60, 60e3], pushSync: [12, 60e3], pushTest: [3, 3600e3] }, opts.limits);
   let _pins = opts.pins || null; const pins = () => _pins || (_pins = new PinStore({ kv: getKV() }));
   const live = opts.live || new LiveStore({ now: opts.now });
   let _push = opts.push || null; const push = () => _push || (_push = new PushService({ kv: getKV() }));
@@ -142,6 +142,7 @@ function createServer(opts = {}) {
       limit(lim.hit('v:' + tk, ...L.voice), 'sending voice too often, wait a few seconds'); limit(lim.hit('vg:' + store.normCode(code), ...L.voiceGroup), 'too many voice clips in this group');
       const buf = await rawBody(req, store.o.maxClipBytes); const mime = String(req.headers['content-type']).split(';')[0].toLowerCase();
       const msg = store.addClip(code, tk, buf, mime, q.get('dur')); return json(res, 201, { ok: true, id: msg.id, expiresAt: msg.expiresAt }); }
+    if (act === 'expenses' && req.method === 'GET') { limit(lim.hit('xg:' + token, 30, 60e3), 'too many requests'); return json(res, 200, store.listExpenses(code, token)); }
     if (!act && req.method === 'GET') { const { g, m } = store.auth(code, token); m.lastSeen = store.now(); return json(res, 200, store.snapshot(g)); }
     if (req.method !== 'POST') throw new HttpError(405, 'method not allowed');
     const b = await body(req); const tk = b.token || token;
@@ -152,6 +153,10 @@ function createServer(opts = {}) {
       const g = store.raiseAlert(code, tk, b); store.flushNow(g); return json(res, 200, { ok: true }); }
     if (act === 'say') { store.auth(code, tk); limit(lim.hit('sy:' + tk, ...L.say), 'sending too fast, slow down'); limit(lim.hit('syg:' + store.normCode(code), ...L.sayGroup), 'too many messages in this group');
       const mg = store.say(code, tk, b.type); return json(res, 200, { ok: true, id: mg.id }); }
+    if (act === 'expense' && !parts[3]) { store.auth(code, tk); limit(lim.hit('x:' + tk, ...L.expense), 'adding expenses too fast'); const r = store.addExpense(code, tk, b); store.flushNow(r.g); return json(res, 201, { ok: true, expense: r.expense }); }
+    if (act === 'expense' && parts[3] === 'delete') { store.auth(code, tk); limit(lim.hit('x:' + tk, ...L.expense), 'too fast'); const g = store.delExpense(code, tk, b.id); store.flushNow(g); return json(res, 200, { ok: true }); }
+    if (act === 'stop' && !parts[3]) { store.auth(code, tk); limit(lim.hit('st:' + tk, ...L.stopReq), 'requesting stops too fast'); const r = store.requestStop(code, tk, b); store.flushNow(r.g); return json(res, 201, { ok: true, stop: { id: r.stop.id } }); }
+    if (act === 'stop' && parts[3] === 'act') { store.auth(code, tk); limit(lim.hit('sa:' + tk, ...L.stopAct), 'too fast'); const g = store.stopAct(code, tk, b.id, b.act); store.flushNow(g); return json(res, 200, { ok: true }); }
     if (act === 'leave') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const r = store.leave(code, tk); if (!r.closed) store.flushNow(r.g); return json(res, 200, { ok: true, closed: r.closed }); }
     if (act === 'endtrip') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); const r = store.endTrip(code, tk); if (!r.closed) store.flushNow(r.g); return json(res, 200, { ok: true, closed: r.closed ? 'finished' : null }); }
     if (act === 'cancel') { limit(lim.hit('lv:' + tk, ...L.lifecycle)); store.cancelGroup(code, tk); return json(res, 200, { ok: true, closed: 'cancelled' }); }

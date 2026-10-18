@@ -52,6 +52,12 @@
 <h2 id="live">Live location sharing link (optional)</h2>
 <p>If you tap <b>Start sharing</b> on the Ride screen, RiderKit creates a link and sends your GPS position (about every 5 seconds), accuracy, speed and the optional name you typed to our server while sharing is on. Anyone who has the link can see your latest position, a trail of up to about 60 recent points (one every 15 seconds or more), your name and the time the link ends; they need no account. Choose how long it lasts (1 to 12 hours). This data is held <b>in server memory only</b>, is never written to disk or a database, and is deleted when you stop sharing, when the link expires, or if the server restarts. The link contains a random, unguessable code, but anyone you give it to can pass it on, so share it only with people you trust. Your own copy of the secret key stays on your device. We do not keep a history of where you have been.</p>
 
+<h2 id="expenses">Group expenses and stops</h2>
+<p>Inside a live group ride, riders can record shared expenses (amount, a short label, who paid, who shares it) and request or plan stops (type, optional note, and a position). These are visible to everyone in the group, are held in server memory only (never written to disk), and are deleted when the group ends or expires. RiderKit only does the arithmetic; it does not process payments or ask for bank or UPI details.</p>
+
+<h2 id="recap">Ride recap card</h2>
+<p>The recap card is drawn on your device from a saved ride (distance, time, speeds, and a plain outline of the route with no map or street names). By default the first and last 300 m are left out so your home is not revealed. Nothing is uploaded: the image only leaves your device if you choose Share or Save.</p>
+
 <h2>Emergency messages</h2>
 <p>If a crash alert is not cancelled, the app opens your phone's SMS or WhatsApp app with a message already written to your emergency contact, including a Google Maps link to your last known location. <b>The app does not send it by itself – you must press Send in that app.</b> Once you send it, the message is handled by your messaging provider under its own terms; RiderKit does not see or store it.</p>
 
