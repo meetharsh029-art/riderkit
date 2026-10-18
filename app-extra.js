@@ -65,4 +65,50 @@ let syncT; const resyncSoon = () => { clearTimeout(syncT); syncT = setTimeout(()
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resyncSoon(); });
 ['click', 'change'].forEach(ev => document.addEventListener(ev, e => { if (e.target.closest && e.target.closest('.dxSave,#maintList,#vSave,#tyreForm,[data-act]')) resyncSoon(); }, true));
 setTimeout(async () => { try { await localNotify(); if (localStorage.getItem('rk-push')) await syncReminders(); } catch {} }, 1500);
+
+// ===== Stage 2: hazard + place pins =====
+const PN = { map: null, layer: null, sel: null, types: JSON.parse(localStorage.getItem('rk-pin-types') || 'null') || Object.keys(X.PIN_TYPES), loadT: null, byId: {} };
+const devId = () => { let d = localStorage.getItem('rk-did'); if (!/^[a-f0-9]{16,64}$/.test(d || '')) { d = X.newDeviceId(); localStorage.setItem('rk-did', d); } return d; };
+const pinFetch = async (method, path, body) => { const r = await fetch(API + path, { method, headers: { 'content-type': 'application/json', 'x-device-id': devId() }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined }); let j = {}; try { j = await r.json(); } catch {} if (!r.ok) throw Object.assign(new Error(j.error || 'HTTP ' + r.status), { status: r.status }); return j; };
+const pinMsg = t => { $('pinMsg').textContent = t; };
+function pinInit() {
+  if (PN.map) { setTimeout(() => PN.map.invalidateSize(), 60); return; }
+  $('pinChips').innerHTML = Object.entries(X.PIN_TYPES).map(([k, v]) => `<label><input type="checkbox" data-pt="${k}" ${PN.types.includes(k) ? 'checked' : ''}>${esc(v.label)}</label>`).join('');
+  $('pinType').innerHTML = Object.entries(X.PIN_TYPES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('');
+  $('pinChips').onchange = () => { PN.types = [...$('pinChips').querySelectorAll('input:checked')].map(i => i.dataset.pt); localStorage.setItem('rk-pin-types', JSON.stringify(PN.types)); pinDraw(); };
+  let c = [22.5, 78.9], z = 5; try { const lp = JSON.parse(localStorage.getItem('rk-lastpos') || 'null'); if (lp) { c = [lp.lat, lp.lng]; z = 13; } } catch {}
+  PN.map = L.map('pinMap', { zoomControl: true }).setView(c, z); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(PN.map);
+  PN.layer = L.layerGroup().addTo(PN.map); PN.map.on('moveend', () => { clearTimeout(PN.loadT); PN.loadT = setTimeout(pinLoad, 700); });
+  $('pinRefresh').onclick = () => pinLoad(true); $('pinLocate').onclick = () => locate().then(p => { PN.map.setView([p.lat, p.lng], 14); }).catch(e => pinMsg(e.message));
+  $('pinAddMe').onclick = async () => { try { const p = await locate(); await pinAdd(p.lat, p.lng); } catch (e) { $('pinAddMsg').textContent = e.message; } };
+  $('pinAddMap').onclick = () => { const c = PN.map.getCenter(); pinAdd(c.lat, c.lng).catch(e => { $('pinAddMsg').textContent = e.message; }); };
+  setTimeout(() => { PN.map.invalidateSize(); pinLoad(); }, 200);
+}
+function locate() { return new Promise((ok, bad) => { if (!navigator.geolocation) return bad(new Error('Location is not available on this device')); navigator.geolocation.getCurrentPosition(p => { const o = { lat: p.coords.latitude, lng: p.coords.longitude }; try { localStorage.setItem('rk-lastpos', JSON.stringify(o)); } catch {} ok(o); }, e => bad(new Error('Could not get your location: ' + e.message)), { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }); }); }
+async function pinLoad(force) {
+  const b = PN.map.getBounds(), bb = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+  if (bb[2] - bb[0] > 3 || bb[3] - bb[1] > 3) { pinMsg('Zoom in to see pins (the map area is too large).'); PN.layer.clearLayers(); return; }
+  try { const j = await pinFetch('GET', '/api/pins?bbox=' + bb.map(n => n.toFixed(4)).join(',')); PN.byId = {}; j.pins.forEach(p => PN.byId[p.id] = p);
+    const cache = (await K.kvGet('pinsCache')) || {}; await K.kvSet('pinsCache', X.mergePinCache(cache, j.pins, Date.now(), 400)); pinMsg(j.pins.length + ' pin' + (j.pins.length === 1 ? '' : 's') + ' in this area.'); }
+  catch (e) { const cache = (await K.kvGet('pinsCache')) || {}; PN.byId = {}; Object.values(cache).filter(p => p.exp > Date.now() && X.inBox(p, bb)).forEach(p => PN.byId[p.id] = p);
+    pinMsg((e.status === 429 ? e.message : 'Offline or server unavailable') + ': showing ' + Object.keys(PN.byId).length + ' saved pins.'); }
+  pinDraw();
+}
+function pinDraw() { PN.layer.clearLayers(); Object.values(PN.byId).filter(p => PN.types.includes(p.type)).forEach(p => { const T = X.PIN_TYPES[p.type]; if (!T) return;
+  L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: `<div class="pinbtn" style="background:${T.color}" aria-label="${esc(T.label)}">${T.short}</div>` }), title: T.label }).on('click', () => pinSelect(p.id)).addTo(PN.layer); }); if (PN.sel && !PN.byId[PN.sel]) { PN.sel = null; $('pinSel').hidden = true; } }
+function pinSelect(id) { const p = PN.byId[id]; if (!p) return; PN.sel = id; const T = X.PIN_TYPES[p.type]; const el = $('pinSel'); el.hidden = false; const mine = (JSON.parse(localStorage.getItem('rk-pin-votes') || '{}'))[id];
+  el.innerHTML = `<h3>${esc(T.label)}</h3>${p.note ? `<p>${esc(p.note)}</p>` : ''}<p class="hint">Added ${esc(X.pinAge(p.at))} &middot; last confirmed ${esc(X.pinAge(p.seen || p.at))} &middot; ${esc(X.pinLeft(p.exp))}<br>${p.up} still there &middot; ${p.down} gone</p>
+  <div class="row"><button class="primary small" data-pv="up" ${mine === 'up' ? 'disabled' : ''}>Still there</button><button class="small" data-pv="down" ${mine === 'down' ? 'disabled' : ''}>Gone / wrong</button><button class="small" data-pv="report">Report</button><a class="btn small" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}">Navigate</a></div><p id="pinSelMsg" class="hint" role="status"></p>`;
+  el.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => pinAct(p.id, b.dataset.pv)); }
+async function pinAct(id, act) { const m = t => { const e = $('pinSelMsg'); if (e) e.textContent = t; };
+  try { if (act === 'report') { if (!confirm('Report this pin as spam, abusive or wrong? Three reports hide it.')) return; await pinFetch('POST', '/api/pins/report', { id }); m('Thanks, reported.'); return; }
+    const r = await pinFetch('POST', '/api/pins/vote', { id, dir: act }); const v = JSON.parse(localStorage.getItem('rk-pin-votes') || '{}'); v[id] = act; localStorage.setItem('rk-pin-votes', JSON.stringify(v).slice(0, 20000));
+    if (r.removed) { delete PN.byId[id]; PN.sel = null; $('pinSel').hidden = true; pinDraw(); pinMsg('Removed: enough riders said it is gone.'); } else { PN.byId[id] = r.pin; pinSelect(id); } }
+  catch (e) { m(e.message); } }
+async function pinAdd(lat, lng) { const type = $('pinType').value; $('pinAddMsg').textContent = 'Adding...';
+  const r = await pinFetch('POST', '/api/pins', { type, lat, lng, note: $('pinNote').value }); $('pinNote').value = ''; PN.byId[r.pin.id] = r.pin; if (!PN.types.includes(type)) PN.types.push(type); pinDraw(); PN.map.setView([r.pin.lat, r.pin.lng], Math.max(PN.map.getZoom(), 14));
+  $('pinAddMsg').textContent = r.merged ? 'A matching pin was already here, so your add counted as "still there".' : 'Pin added. It stays for ' + (X.PIN_TYPES[type].hazard ? '14 days' : 'about 6 months') + ' unless riders confirm or remove it.'; pinSelect(r.pin.id); }
+window.__rkPins = PN;
+window.__rkOnTab.push(name => { if (name === 'pins') pinInit(); });
+//__STAGES__
 })();

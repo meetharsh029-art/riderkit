@@ -287,6 +287,19 @@
     </div>
   </section>
 
+  <section id="tab-pins" class="tab" aria-label="Hazards and places">
+    <h2 class="h-title"><svg class="ic lg"><use href="#i-pin"/></svg>Hazards &amp; places</h2>
+    <div class="glass card"><div id="pinChips" class="chips" role="group" aria-label="Show pin types"></div>
+      <div id="pinMap" style="height:300px;border-radius:14px;margin-top:8px" aria-label="Map of hazards and places"></div>
+      <p id="pinMsg" class="hint" role="status">Move or zoom the map to load pins.</p>
+      <div class="row"><button id="pinLocate" class="small">Centre on me</button><button id="pinRefresh" class="small">Refresh</button></div></div>
+    <div id="pinSel" class="glass card" hidden></div>
+    <div class="glass card"><h3>Add a pin</h3>
+      <label>Type<select id="pinType"></select></label><label>Note (optional, max 80 characters, no links or phone numbers)<input id="pinNote" maxlength="80" autocomplete="off"></label>
+      <div class="row"><button id="pinAddMe" class="primary">Drop at my location</button><button id="pinAddMap">Drop at map centre</button></div><p id="pinAddMsg" class="hint" role="status"></p></div>
+    <small class="hint">Pins are added by riders like you. They are anonymous, unverified and may be wrong or out of date: always ride to the conditions in front of you. Hazards expire in 14 days unless riders confirm them; places last about 6 months. Pins that three riders report are hidden. Limits: 5 new pins per hour.</small>
+  </section>
+
   <section id="tab-weather" class="tab" aria-label="Weather">
     <h2 class="h-title"><svg class="ic lg"><use href="#i-cloud"/></svg>Weather <span class="badge">OPEN-METEO</span></h2>
     <div class="glass card" id="wxRouteCard">
@@ -384,6 +397,7 @@
 
 <div id="moreSheet" class="glass sheet" hidden role="menu" aria-label="More">
   <button data-tab="weather" role="menuitem"><svg class="ic"><use href="#i-cloud"/></svg>Weather</button>
+  <button data-tab="pins" role="menuitem"><svg class="ic"><use href="#i-pin"/></svg>Hazards &amp; places</button>
   <button data-tab="fuel" role="menuitem"><svg class="ic"><use href="#i-fuel"/></svg>Fuel</button>
   <button data-tab="docs" role="menuitem"><svg class="ic"><use href="#i-doc"/></svg>Docs</button>
   <button data-tab="help" role="menuitem"><svg class="ic"><use href="#i-help"/></svg>Help</button>

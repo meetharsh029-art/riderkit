@@ -30,6 +30,15 @@
   }
   const urlB64ToBytes = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = (s + p).replace(/-/g, '+').replace(/_/g, '/'); const bin = typeof atob === 'function' ? atob(b) : Buffer.from(b, 'base64').toString('binary'); return Uint8Array.from(bin, c => c.charCodeAt(0)); };
 
-  const api = { isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
+  // ===== Stage 2: pins =====
+  const PIN_TYPES = { pothole: { label: 'Pothole / bad road', short: '!', color: '#b91c1c', hazard: true }, puncture: { label: 'Puncture shop', short: 'T', color: '#b45309' }, mechanic: { label: 'Mechanic', short: 'M', color: '#2563eb' }, dhaba: { label: 'Dhaba / food', short: 'D', color: '#15803d' }, fuel: { label: 'Fuel station', short: 'F', color: '#7c3aed' } };
+  const bboxAround = (lat, lng, km) => { const dl = km / 111.2, dn = km / (111.2 * Math.max(0.2, Math.cos(lat * Math.PI / 180))); return [lat - dl, lng - dn, lat + dl, lng + dn]; };
+  const pinAge = (ms, now) => { const d = Math.max(0, Math.round(((now == null ? Date.now() : now) - ms) / 864e5)); return d === 0 ? 'today' : d === 1 ? 'yesterday' : d < 60 ? d + ' days ago' : Math.round(d / 30) + ' months ago'; };
+  const pinLeft = (exp, now) => { const d = Math.round((exp - (now == null ? Date.now() : now)) / 864e5); return d <= 0 ? 'expires today' : d === 1 ? 'expires in 1 day' : d < 60 ? 'expires in ' + d + ' days' : 'expires in ' + Math.round(d / 30) + ' months'; };
+  const inBox = (p, bb) => p.lat >= bb[0] && p.lat <= bb[2] && p.lng >= bb[1] && p.lng <= bb[3];
+  const mergePinCache = (cache, pins, now, max) => { const m = Object.assign({}, cache); for (const p of pins) m[p.id] = Object.assign({ seenAt: now }, p, { seenAt: now }); const live = Object.values(m).filter(p => p.exp > now).sort((a, b) => b.seenAt - a.seenAt).slice(0, max || 400); return Object.fromEntries(live.map(p => [p.id, p])); };
+  const newDeviceId = () => { const a = new Uint8Array(16); (typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto : require('crypto').webcrypto).getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); };
+
+  const api = { PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
   if (typeof module !== 'undefined') module.exports = api; else root.Extra = api;
 })(typeof self !== 'undefined' ? self : this);

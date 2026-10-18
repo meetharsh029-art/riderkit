@@ -357,3 +357,4 @@ select{padding-right:36px}
 .glass .hero-in small:first-child,.hero-in small:first-child{font-size:10px;letter-spacing:.03em;font-weight:600}.glass .hero-in small{font-size:12px}
 
 .remlist{margin:8px 0;padding-left:18px}.remlist li{margin:4px 0;font-size:15px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chips label{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:6px 12px;border:1px solid #cbd5e1;border-radius:22px;font-size:14px;font-weight:600;margin:0}.chips input{width:20px;height:20px;margin:0}.pinbtn{width:26px;height:26px;border-radius:50%;color:#fff;font:700 14px/26px Inter,system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}

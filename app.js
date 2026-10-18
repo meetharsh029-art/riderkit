@@ -32,7 +32,7 @@ window.__rk = { getAll, put, del, kvGet, kvSet }; // exposed for tests/debug
 // ---------- icons + tabs ----------
 const ico = (n, c) => `<svg class="ic ${c || ''}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const APP_VERSION = 'v8';
-const MORE = ['weather', 'fuel', 'docs', 'help', 'group', 'feedback', 'me'];
+const MORE = ['weather', 'pins', 'fuel', 'docs', 'help', 'group', 'feedback', 'me'];
 let curTab = 'home';
 function showTab(name) {
   curTab = name;
