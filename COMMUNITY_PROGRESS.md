@@ -26,3 +26,17 @@ Deploy flow: edit /workspace/rider-app, run /workspace/sync-riderkit.sh (copies 
 - Client: `community-social.js` (like + comments inline on every post, tap an author for the profile sheet with Follow/Message/Report/Block and their posts, followers/following lists, People tab with follow requests and a badge).
 - Tests: `tests/community.social.test.js` (12) on memory/file/pg-mem/real Postgres; e2e.community.js now 37 checks.
 - Fixed: `GET posts/:id/comments` was shadowed by the post route.
+
+## Stage 5 — clubs, group chats, live chat (SW v23)
+- Server `server/community-clubs.js`: clubs (public, unique names, open / request / invite-only join), group chats (invite-only, max 30, never discoverable), owner/mod roles, kick/ban/unban, owner-leave transfer (last member leaving deletes), club-only post visibility + `feed?scope=club`, invites gated by the invitee's DM setting and blocks, chat text-only 400 chars with spam/link/phone refusal, rate limit, prune to ~600, unread + read pointer, report message/club with 3 preceding messages as evidence, admin hide/remove, deletion cascade.
+- Live delivery: SSE over `GET clubs/:id/stream` (fetch stream with Bearer header, `Last-Event-ID` backlog, `event: del`/`kicked`, 20 s heartbeat, max 3 streams per user, 200 total), polling fallback via `chat?since=`. Single-process only.
+- Client `community-clubs.js`: Clubs tab (invitations, my clubs, search/discover, create), club sheet with Chat / Posts / Members, SSE with polling fallback, owner/mod actions; composer can post to a club.
+- Tests: `tests/community.clubs.test.js` (9) on memory/file/pg-mem/real Postgres; e2e.community.js now 47 checks including a real browser fetch-stream.
+
+## Stage 6 — direct messages (server done; UI follows)
+- `server/community-dm.js`: conversation = sorted user pair. Gate: recipient `dm` = none | followers (sender must have an accepted follow of them) | everyone; once the recipient has written, replies are always allowed; cold senders get 3 unanswered messages; block = 404 both ways (history unreachable, conversation hidden); suspended = 404/403; rate limits `dm` and `dmNew`; list with preview + unread, read, mute, clear (delete-for-me), delete own message (both sides), cap ~1000 per conversation, one user-level SSE stream (`dm/stream`, 2 per user), report DM (participants only; evidence = message + 3 before it), admin hide/remove, deletion removes the whole conversation on both sides.
+- Reports of club messages now require membership (`reportGuard`).
+- Tests: `tests/community.dm.test.js` (7) on all four backends.
+
+## Checkpoint (stage 5 + partial DM client, SW v24)
+- Synced/committed stage 5 clubs + early DM client (community-dm.js, unfinished: no message requests/privacy setting yet, untested).

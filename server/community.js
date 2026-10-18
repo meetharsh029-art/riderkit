@@ -116,7 +116,7 @@ class Community {
     return this.contentInfo ? this.contentInfo(kind, id) : null; }
   async report(user, b, ip) {
     const kind = String(b.kind || ''), reason = String(b.reason || ''); if (!KINDS.includes(kind)) throw new HttpError(400, 'unknown report kind'); if (!REASONS.includes(reason)) throw new HttpError(400, 'choose a reason'); this.rl('report', user.id, ip, user);
-    const note = cleanText(b.note || '', 200, { label: 'note', links: true }), t = await this.targetInfo(kind, String(b.id || '')); if (!t) throw new HttpError(404, 'that content no longer exists');
+    const note = cleanText(b.note || '', 200, { label: 'note', links: true }); if (this.reportGuard) await this.reportGuard(user, kind, String(b.id || '')); const t = await this.targetInfo(kind, String(b.id || '')); if (!t) throw new HttpError(404, 'that content no longer exists');
     if (t.owner === user.id) throw new HttpError(400, 'you cannot report yourself; delete the content instead');
     const dedupe = kind + ':' + t.key + ':' + user.id; const id = this.tkey();
     if (!await this.kv.add('crept', dedupe, id)) return { ok: true, duplicate: true };
