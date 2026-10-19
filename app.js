@@ -854,17 +854,21 @@ $('bkFile').onchange = async e => { const f = e.target.files[0]; e.target.value 
   } catch (err) { $('bkMsg').textContent = 'Import failed: ' + err.message + ' Nothing was changed.'; } };
 { const m = sessionStorage.getItem('rk-bk-msg'); if (m) { sessionStorage.removeItem('rk-bk-msg'); $('bkMsg').textContent = m; } }
 
-// ---------- theme (light default / dark) ----------
-function applyTheme(t, persist) {
-  const dark = t === 'dark'; if (dark) document.documentElement.setAttribute('data-theme', 'dark'); else document.documentElement.removeAttribute('data-theme');
-  if (persist) try { localStorage.setItem('rk-theme', dark ? 'dark' : 'light'); } catch {}
-  const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = dark ? '#060a14' : '#ffffff';
-  $('themeBtn').setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); $('themeBtn').innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${dark ? 'sun' : 'moon'}"/></svg>`; $('themeDark').checked = dark;
+// ---------- theme (Light default / Dark / Follow system) ----------
+const THEME_PREFS = ['light', 'dark', 'system'], sysDark = () => !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+const themePref = () => { let p = null; try { p = localStorage.getItem('rk-theme'); } catch {} return THEME_PREFS.includes(p) ? p : 'light'; };
+function applyTheme(pref, persist) {
+  if (!THEME_PREFS.includes(pref)) pref = 'light';
+  const dark = pref === 'dark' || (pref === 'system' && sysDark()); if (dark) document.documentElement.setAttribute('data-theme', 'dark'); else document.documentElement.removeAttribute('data-theme');
+  if (persist) try { localStorage.setItem('rk-theme', pref); } catch {}
+  for (const tc of document.querySelectorAll('meta[name=theme-color]')) tc.content = dark ? '#0a0a0a' : '#ffffff';
+  $('themeBtn').setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); $('themeBtn').innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${dark ? 'sun' : 'moon'}"/></svg>`; $('themeSel').value = pref;
   line.setStyle({ color: cssv('--m-line') }); if (typeof G !== 'undefined' && G.routeLine) G.routeLine.setStyle({ color: cssv('--m-route') });
-  if (persist) { renderHome(); } 
+  if (persist) { renderHome(); }
 }
 $('themeBtn').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
-$('themeDark').onchange = e => applyTheme(e.target.checked ? 'dark' : 'light', true);
+$('themeSel').onchange = e => applyTheme(e.target.value, true);
+if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); const f = () => { if (themePref() === 'system') applyTheme('system', false); }; if (mq.addEventListener) mq.addEventListener('change', f); else if (mq.addListener) mq.addListener(f); }
 // ---------- feedback (queued offline, retried) ----------
 let fbBusy = false;
 async function fbUpdQueued() { const q = (await kvGet('fbQueue')) || []; const el = $('fbQueued'); el.hidden = !q.length; el.textContent = q.length ? q.length + ' report' + (q.length > 1 ? 's' : '') + ' waiting to send (will retry automatically).' : ''; return q; }
@@ -1015,7 +1019,7 @@ $('acct').addEventListener('click', async e => {
 acctInit();
 
 // ---------- init ----------
-applyTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light', false);
+applyTheme(themePref(), false);
 loadSettings(); renderRides(); refreshDocBanner(); renderHome();
 window.__rkApp = { maybeRoute, vehicleState, showTab, getVehicles, activeVehicle, esc, get G() { return G; }, get map() { return map; } };
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW failed', e));

@@ -1,7 +1,7 @@
 /* Malhiva community. Uses the theme variables from styles.css so light and dark both work. */
 .cm-tabs{display:flex;gap:6px;overflow-x:auto;margin:6px 0 10px;padding-bottom:4px}
 .cm-tabs button{min-height:44px;padding:8px 14px;font-size:14px;border-radius:999px;white-space:nowrap;position:relative}
-.cm-tabs button.on{color:var(--cy2,#2563eb);border-color:var(--cy,#2563eb);background:var(--acc-soft,rgba(37,99,235,.1))}
+.cm-tabs button.on{color:var(--cy2,#0a0a0a);border-color:var(--cy,#0a0a0a);background:var(--acc-soft,rgba(10,10,10,.1))}
 .cm-badge{font-style:normal;background:var(--red,#dc2626);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px;margin-left:6px}
 .cm-toast{position:sticky;top:64px;z-index:20;padding:10px 14px;border-radius:14px;background:var(--glass2);border:1px solid var(--line);margin:6px 0;font-size:14px}
 .cm-toast.bad{border-color:var(--red,#dc2626);color:var(--red,#b91c1c)}
@@ -17,11 +17,11 @@
 .cm-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.cm-actions button{min-height:44px;padding:6px 12px;font-size:14px}
 .cm-caption{white-space:pre-wrap;word-break:break-word;margin:6px 0}
 .cm-chat{display:flex;flex-direction:column;gap:6px;max-height:48vh;min-height:160px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--glass2)}
-.cm-msg{max-width:86%;padding:8px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--line);word-break:break-word;align-self:flex-start}.cm-msg.mine{align-self:flex-end;background:var(--acc-soft,rgba(37,99,235,.12))}.cm-msg small{display:block}
+.cm-msg{max-width:86%;padding:8px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--line);word-break:break-word;align-self:flex-start}.cm-msg.mine{align-self:flex-end;background:var(--acc-soft,rgba(127,127,127,.12))}.cm-msg small{display:block}
 .cm-compose{display:flex;gap:8px;margin-top:8px}.cm-compose input{margin:0}.cm-compose button{flex:none}
 .cm-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);text-align:left;width:100%;background:none;border-left:0;border-right:0;border-top:0;border-radius:0}
 .cm-item .cm-grow{flex:1;min-width:0}.cm-item b,.cm-item small{display:block;overflow:hidden;text-overflow:ellipsis}
 .cm-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.cm-thumbs .cm-th{position:relative}.cm-thumbs img{width:84px;height:84px;object-fit:cover;border-radius:10px}.cm-thumbs button{position:absolute;top:-6px;right:-6px;min-height:28px;width:28px;padding:0;border-radius:50%}
 .cm-warn{font-size:13px;color:var(--mut);border-left:3px solid var(--am,#d97706);padding-left:8px;margin:6px 0}
 .cm-tall{max-height:88vh;overflow:auto}.cm-like.on{color:#e11d48}.cm-comments{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}.cm-cmt{padding:4px 0;font-size:14px;overflow-wrap:anywhere}.cm-cmt small{color:var(--mut)}
-.cm-chat{max-height:42vh;min-height:140px;overflow:auto;display:flex;flex-direction:column;gap:6px;padding:8px 0}.cm-msg{background:var(--card2,rgba(127,127,127,.12));border-radius:12px;padding:6px 10px;max-width:92%;overflow-wrap:anywhere;align-self:flex-start}.cm-msg.mine{align-self:flex-end;background:rgba(37,99,235,.18)}.cm-msg small{color:var(--mut);display:block}.cm-macts{display:flex;gap:4px;flex-wrap:wrap}.cm-macts button{font-size:11px;padding:2px 6px}
+.cm-chat{max-height:42vh;min-height:140px;overflow:auto;display:flex;flex-direction:column;gap:6px;padding:8px 0}.cm-msg{background:var(--card2,rgba(127,127,127,.12));border-radius:12px;padding:6px 10px;max-width:92%;overflow-wrap:anywhere;align-self:flex-start}.cm-msg.mine{align-self:flex-end;background:rgba(127,127,127,.18)}.cm-msg small{color:var(--mut);display:block}.cm-macts{display:flex;gap:4px;flex-wrap:wrap}.cm-macts button{font-size:11px;padding:2px 6px}
