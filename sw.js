@@ -1,5 +1,5 @@
 importScripts('lib-extra.js');
-const V = 'riderkit-v29';
+const V = 'riderkit-v30';
 const ASSETS = ['./','index.html','styles.css','app.js','lib-core.js','lib-extra.js','app-extra.js','community.js','community-social.js','community-clubs.js','community-dm.js','community.css','manifest.webmanifest','vendor/leaflet.js','vendor/leaflet.css',
   'vendor/images/marker-icon.png','vendor/images/marker-icon-2x.png','vendor/images/marker-shadow.png','vendor/images/layers.png','fonts/inter.woff2','icons/icon.svg','icons/icon-192.png','icons/icon-512.png','icons/icon-maskable-192.png','icons/icon-maskable-512.png','icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
