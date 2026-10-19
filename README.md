@@ -1,4 +1,4 @@
-# RiderKit — motorcycle rider PWA (v1, prototype)
+# Malhiva — motorcycle rider PWA (v1, prototype)
 
 Vanilla JS PWA: ride tracking (Leaflet + OpenStreetMap), crash/fall alert, ride log with notes/photos (IndexedDB), service reminders, group-ride **mock**. Units: km, km/h, ₹.
 

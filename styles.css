@@ -1,4 +1,4 @@
-/* RiderKit v4 - neon riding dashboard. Self-hosted Inter (variable, OFL, fonts/inter.woff2) with a system-font fallback: works offline. */
+/* Malhiva v4 - neon riding dashboard. Self-hosted Inter (variable, OFL, fonts/inter.woff2) with a system-font fallback: works offline. */
 @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;src:url(fonts/inter.woff2) format("woff2")}
 :root{--bg:#050812;--bg2:#0a1124;--glass:rgba(18,28,56,.62);--glass2:rgba(26,40,78,.55);--line:rgba(120,170,255,.18);--tx:#eaf2ff;--mut:#93a8c8;
 --cy:#22e6ff;--cy2:#00b8d9;--am:#ff9d2e;--or:#ff9d2e;--mg:#d946ef;--red:#ff4d6a;--grn:#3ee8a0;
@@ -15,7 +15,7 @@ body{background:radial-gradient(900px 500px at 85% -10%,rgba(34,230,255,.14),tra
 .ic.lg{width:26px;height:26px}.ic.xl{width:54px;height:54px;margin:0 0 6px;stroke-width:1.4}
 button .ic:only-child,nav .ic{margin-right:0}
 header{position:sticky;top:0;z-index:900;display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top)) 18px 10px;background:rgba(5,8,18,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
-.brand{display:flex;align-items:center;color:var(--cy)}.brand b{font-size:21px;letter-spacing:.5px;color:var(--tx)}.brand span{color:var(--cy);text-shadow:var(--glow-cy)}.brand .ic{filter:drop-shadow(0 0 6px var(--cy))}
+.brand{display:flex;align-items:center;color:var(--cy)}.brand .logo-mark{width:30px;height:30px;border-radius:7px;margin-right:9px;flex:none}.brand b{font-size:21px;letter-spacing:.6px;color:var(--tx)}.brand span{color:var(--cy);text-shadow:var(--glow-cy)}.brand .ic{filter:drop-shadow(0 0 6px var(--cy))}
 header small{color:var(--am);font-weight:700;text-transform:uppercase;letter-spacing:1px}
 main{padding:14px 14px calc(var(--nav) + 40px + env(safe-area-inset-bottom));max-width:640px;margin:auto}
 .tab{display:none}.tab.active{display:block;animation:rise .35s ease both}

@@ -21,7 +21,7 @@ Guests keep working: no ride/group endpoint needs an account. Accounts only add 
 
 ## Exact steps for the owner (nothing was signed up for)
 1. **Database (recommended Neon):** create a free account at neon.com, create a project (region near Render's, e.g. Singapore), copy the **pooled connection string** (`postgres://...neon.tech/...?sslmode=require`).
-2. **Email:** create a free Resend account; add and verify a domain you own (add the DNS records they show); create an API key. Pick a sender such as `RiderKit <no-reply@yourdomain.com>`. (Without a domain, use only for testing to your own address.)
+2. **Email:** create a free Resend account; add and verify a domain you own (add the DNS records they show); create an API key. Pick a sender such as `Malhiva <no-reply@yourdomain.com>`. (Without a domain, use only for testing to your own address.)
 3. In the Render dashboard for the `riderkit` service > Environment, add: `DATABASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM`. Deploy manually (the build now runs `npm install --omit=dev`, which installs `pg`).
 4. Check: open the app > SOS & settings > Account: the sign-in form appears (otherwise it says unavailable). Create an account with your email, enter the code, then test sign-out, forgot password, and delete account.
 5. Play Console: enter `https://<your-domain>/delete-account.html` as the Data deletion URL; in Data safety declare email (and, if you enable phone, phone number) as collected for account management, optional, with deletion available; fill the `[PLACEHOLDER]`s in the privacy policy and terms (developer name, contact email, date) and have them reviewed.

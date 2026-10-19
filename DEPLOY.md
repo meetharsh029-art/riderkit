@@ -1,4 +1,4 @@
-# Deploying RiderKit to Render (free web service)
+# Deploying Malhiva to Render (free web service)
 
 No dependencies, no build step. The server listens on `process.env.PORT` at `0.0.0.0`,
 serves the app and the `/api` on one port, and exposes `GET /healthz`.

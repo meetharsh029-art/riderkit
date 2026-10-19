@@ -6,9 +6,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon.svg">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<title>RiderKit</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml"><link rel="icon" href="icons/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>Malhiva</title>
 <meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="styles.css">
@@ -52,7 +52,7 @@
 <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
 </defs></svg>
-<header><div class="brand"><svg class="ic lg"><use href="#i-bolt"/></svg><b>Rider<span>Kit</span></b></div><div class="hdr-r"><small id="net" role="status"></small><button id="themeBtn" class="theme-btn" type="button" aria-label="Switch to dark theme" title="Light / dark theme"><svg class="ic"><use href="#i-moon"/></svg></button></div></header>
+<header><div class="brand"><img class="logo-mark" src="icons/icon.svg" alt="" width="30" height="30"><b id="appName">Malhiva</b></div><div class="hdr-r"><small id="net" role="status"></small><button id="themeBtn" class="theme-btn" type="button" aria-label="Switch to dark theme" title="Light / dark theme"><svg class="ic"><use href="#i-moon"/></svg></button></div></header>
 <div id="alertBanner" hidden role="alert" aria-live="assertive"></div>
 <div id="msgToast" hidden role="status" aria-live="polite"></div>
 <main id="main">
@@ -148,7 +148,7 @@
     <label class="switch tgl"><input type="checkbox" id="crashOn"><span class="knob" aria-hidden="true"></span><span>Automatic crash SOS <small>(motion sensors + GPS)</small></span></label>
     <div id="crashMsg" class="hint" role="status" aria-live="polite"></div>
     <div class="glass card" id="autoSosInfo" hidden><b>Automatic crash SOS is ON</b>
-      <small>While a ride or group trip is active, RiderKit watches the motion sensors and your speed. If it sees a hard impact or sudden stop after riding at speed, a full-screen 15-second countdown starts. If you do not tap <b>I'M OK</b>, an SOS alert with your last location is sent to your group (and a message to your emergency contact opens). <b>It only works while RiderKit is open with the screen on</b>, can miss a crash or trigger by mistake, and its limits have not been tested on a real phone. Change it any time in Settings.</small>
+      <small>While a ride or group trip is active, Malhiva watches the motion sensors and your speed. If it sees a hard impact or sudden stop after riding at speed, a full-screen 15-second countdown starts. If you do not tap <b>I'M OK</b>, an SOS alert with your last location is sent to your group (and a message to your emergency contact opens). <b>It only works while Malhiva is open with the screen on</b>, can miss a crash or trigger by mistake, and its limits have not been tested on a real phone. Change it any time in Settings.</small>
       <div class="row"><button id="autoSosKeep" class="primary small" type="button">Got it, keep it on</button><button id="autoSosOff" class="ghost small" type="button">Turn it off</button></div></div>
     <button id="btnTestCrash" class="ghost small">Test SOS countdown</button>
     <div class="glass card" id="liveCard"><h3>Share live location with family</h3>
@@ -156,7 +156,7 @@
         <button id="liveStart" class="primary">Start sharing</button></div>
       <div id="liveOn" hidden><p id="liveStatus" role="status"></p><input id="liveLink" readonly aria-label="Share link"><div class="row"><button id="liveShare" class="primary small">Send link</button><button id="liveCopy" class="small">Copy</button><button id="liveStop" class="danger small">Stop sharing</button></div></div>
       <p id="liveMsg" class="hint" role="status"></p>
-      <small class="hint">Family can open the link without installing anything. They see only your latest position, a short trail, your name and when it ends; they cannot see anything else or track you after it expires or you stop. Anyone who has the link can view it, so send it only to people you trust. Needs RiderKit open with GPS on (phones pause GPS in the background, so the link may show an older position).</small></div>
+      <small class="hint">Family can open the link without installing anything. They see only your latest position, a short trail, your name and when it ends; they cannot see anything else or track you after it expires or you stop. Anyone who has the link can view it, so send it only to people you trust. Needs Malhiva open with GPS on (phones pause GPS in the background, so the link may show an older position).</small></div>
   </section>
 
   <section id="tab-log" class="tab">
@@ -216,7 +216,7 @@
     <h2 class="h-title"><svg class="ic lg"><use href="#i-doc"/></svg>Documents</h2>
     <div id="docList"></div>
     <div class="glass card" id="remCard"><h3>Reminders</h3><div id="remBox"></div>
-      <small class="hint">Covers dated items only: document expiry (insurance, PUC, licence, RC), service items with a month/day interval, tyre age and pressure checks. Service due only by km cannot be reminded by date. Push needs the RiderKit server to be awake; if it is not, reminders show as soon as you open the app.</small></div>
+      <small class="hint">Covers dated items only: document expiry (insurance, PUC, licence, RC), service items with a month/day interval, tyre age and pressure checks. Service due only by km cannot be reminded by date. Push needs the Malhiva server to be awake; if it is not, reminders show as soon as you open the app.</small></div>
     <small class="hint">Alerts also appear in the app when a document is due within 30 days or expired.</small>
   </section>
 
@@ -278,7 +278,7 @@
         <div id="pttStatus" class="hint" role="status" aria-live="polite"></div>
         <div class="row"><label class="chk"><input type="checkbox" id="optSound" checked> Beep / vibrate on messages</label><label class="chk"><input type="checkbox" id="optAuto" checked> Auto-play voice</label></div>
         <h3>Messages</h3><div id="gMsgLog" class="msglog" aria-live="off"><small class="hint">No messages yet.</small></div>
-        <small class="hint">Messages and voice clips only reach riders who have RiderKit open on screen. Voice clips (max 15 s) are held in server memory for a few minutes and then deleted. This is not a replacement for a helmet intercom.</small>
+        <small class="hint">Messages and voice clips only reach riders who have Malhiva open on screen. Voice clips (max 15 s) are held in server memory for a few minutes and then deleted. This is not a replacement for a helmet intercom.</small>
       </div>
       <form id="gSearchForm" class="row"><input id="gQ" aria-label="Search a place (Nominatim)" placeholder="Search a place (Nominatim)" maxlength="100"><button class="primary small">Search</button></form>
       <div id="gResults"></div>
@@ -299,12 +299,12 @@
         <form id="expForm"><div class="row"><label>Amount (&#8377;)<input id="expAmt" inputmode="decimal" autocomplete="off" placeholder="e.g. 450"></label><label>For<input id="expLbl" maxlength="40" autocomplete="off" placeholder="e.g. Petrol"></label></div>
           <label>Paid by<select id="expPaid"></select></label><fieldset id="expWith" class="chips" aria-label="Shared between"></fieldset><button class="primary small">Add expense</button></form>
         <p id="expMsg" class="hint" role="status"></p><div id="expList"></div><h4>Who owes whom</h4><div id="expSettle"></div>
-        <small class="hint">RiderKit only records the expenses and does the sums (shared equally between the riders ticked, to the paisa). It does not move money: settle up yourselves, for example by UPI. Expenses live only while the group exists and are deleted with it.</small></div>
+        <small class="hint">Malhiva only records the expenses and does the sums (shared equally between the riders ticked, to the paisa). It does not move money: settle up yourselves, for example by UPI. Expenses live only while the group exists and are deleted with it.</small></div>
       <h3>Riders</h3><div id="gRiders"></div>
       <div class="glass card" id="gLife"><h3 style="margin-top:0">Trip controls</h3><div id="gRole" class="hint"></div>
         <div class="acts"><button id="gEndTrip" class="ghost">End my trip</button><button id="gCancelGroup" class="danger" hidden>Cancel group for everyone</button><button id="gClaim" class="ghost" hidden>Take over as admin</button></div>
         <small class="hint">End my trip: you stop sharing and your pin disappears; the group keeps going for riders still out, and you can rejoin with the code. The group closes when the admin cancels it or every rider has ended their trip. If the admin ends their trip or leaves, the next rider becomes admin.</small></div>
-      <small class="hint">Breakdown / SOS: tap Alert at the top, pick what happened, and every rider sees it with your location. Alerts only show while RiderKit is open on their screen &ndash; a web page cannot ring or vibrate on a locked phone. For real emergencies call 112.</small>
+      <small class="hint">Breakdown / SOS: tap Alert at the top, pick what happened, and every rider sees it with your location. Alerts only show while Malhiva is open on their screen &ndash; a web page cannot ring or vibrate on a locked phone. For real emergencies call 112.</small>
     </div>
   </section>
 
@@ -358,7 +358,7 @@
     </form>
     <div class="glass card"><div class="card-h"><h3>Fill-ups</h3></div><div id="fuelList"></div></div>
     <div class="glass card"><div class="card-h"><h3><svg class="ic"><use href="#i-pin"/></svg>Stops</h3><button id="stopNow" class="ghost small" type="button">Log a stop now</button></div><div id="stopList"></div>
-      <small class="hint">After a ride RiderKit asks &ldquo;What was this stop?&rdquo; for each pause of 3+ minutes it noticed.</small></div>
+      <small class="hint">After a ride Malhiva asks &ldquo;What was this stop?&rdquo; for each pause of 3+ minutes it noticed.</small></div>
   </section>
 
   <section id="tab-community" class="tab" aria-label="Community">
@@ -382,10 +382,10 @@
       <div id="setMsg" class="hint"></div>
     </form>
     <div class="glass card" id="mapCacheCard"><h3>Map cache</h3><p id="mcStatus" role="status">Checking...</p><button id="mcClear" class="small">Clear saved map tiles</button>
-      <small class="hint">RiderKit remembers only the map tiles you have actually looked at (up to 600, honouring the tile server's cache time, at least a few days) so places you revisit open faster and still show without signal. It does <b>not</b> download maps ahead of time: OpenStreetMap's free tile servers forbid bulk download and "save area for offline" features. For a route you want offline, open the route overview on the map before you leave while you have signal. <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Report a map issue</a>.</small></div>
+      <small class="hint">Malhiva remembers only the map tiles you have actually looked at (up to 600, honouring the tile server's cache time, at least a few days) so places you revisit open faster and still show without signal. It does <b>not</b> download maps ahead of time: OpenStreetMap's free tile servers forbid bulk download and "save area for offline" features. For a route you want offline, open the route overview on the map before you leave while you have signal. <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Report a map issue</a>.</small></div>
     <div class="glass card" id="themeCard"><label class="switch tgl"><input type="checkbox" id="themeDark"><span class="knob" aria-hidden="true"></span><span><b>Dark theme</b><br><small>Light is the default. Your choice is remembered on this device.</small></span></label></div>
     <div class="glass card" id="acctCard"><h3 style="margin-top:0">Account (optional)</h3>
-      <p class="hint">You can use RiderKit fully as a guest. An account only adds sign-in on this and other devices. <a href="terms.html" target="_blank" rel="noopener">Terms</a> · <a href="store/privacy-policy.html" target="_blank" rel="noopener">Privacy</a> · <a href="delete-account.html" target="_blank" rel="noopener">Delete account</a></p>
+      <p class="hint">You can use Malhiva fully as a guest. An account only adds sign-in on this and other devices. <a href="terms.html" target="_blank" rel="noopener">Terms</a> · <a href="store/privacy-policy.html" target="_blank" rel="noopener">Privacy</a> · <a href="delete-account.html" target="_blank" rel="noopener">Delete account</a></p>
       <div id="acct" aria-live="polite"></div></div>
     <div class="glass card" id="backupCard">
       <h3><svg class="ic"><use href="#i-save"/></svg>Backup &amp; restore</h3>
@@ -394,8 +394,8 @@
       <input id="bkFile" type="file" accept="application/json,.json" hidden aria-label="Backup file to import">
       <div id="bkMsg" class="hint" role="status" aria-live="polite"></div>
     </div>
-    <div class="glass card" id="aboutCard"><b>About RiderKit</b><br>
-      <small>RiderKit is <b>not</b> a certified safety device. Crash alert is experimental and may miss a crash or trigger falsely. Your data stays on this device.</small><br>
+    <div class="glass card" id="aboutCard"><b>About Malhiva</b><br>
+      <small>Malhiva is <b>not</b> a certified safety device. Crash alert is experimental and may miss a crash or trigger falsely. Your data stays on this device.</small><br>
       <a id="privacyLink" href="store/privacy-policy.html" target="_blank" rel="noopener">Privacy policy</a></div>
     <div class="glass card"><small>Alert is sent as a pre-filled message that <b>you/the rider must press Send on</b>. The app cannot send silently from a browser.</small></div>
   </section>

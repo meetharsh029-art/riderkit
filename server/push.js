@@ -3,6 +3,7 @@
 // (delivery goes through the browser vendor's free push service: FCM / Mozilla autopush / Apple / WNS).
 // Stored per browser subscription: the push endpoint + its keys, a timezone offset and a small list of reminders {id, title, due YYYY-MM-DD, kind}.
 // No name, e-mail, location or vehicle details are stored. Entries expire 400 days after the last sync.
+const { APP_NAME } = require('./brand');
 const crypto = require('crypto');
 const b64u = b => Buffer.from(b).toString('base64url');
 const unb64u = s => Buffer.from(String(s), 'base64url');
@@ -77,14 +78,14 @@ class PushService {
     if (r.status === 404 || r.status === 410) { this.stats.gone++; return 'gone'; } if (r.status >= 200 && r.status < 300) { this.stats.sent++; return 'ok'; } this.stats.failed++; return 'error';
   }
   async test(endpoint) { const id = this.id(String(endpoint || '')), sub = await this.kv.get('pushsub', id); if (!sub) throw Object.assign(new Error('not subscribed'), { status: 404 });
-    const r = await this.deliver(sub, { title: 'RiderKit', body: 'Reminders are on. This is a test notification.', tag: 'rk-test', url: './' }); if (r === 'gone') await this.kv.del('pushsub', id); return { ok: r === 'ok', result: r }; }
+    const r = await this.deliver(sub, { title: APP_NAME, body: 'Reminders are on. This is a test notification.', tag: 'rk-test', url: './' }); if (r === 'gone') await this.kv.del('pushsub', id); return { ok: r === 'ok', result: r }; }
   // Send due reminders (called from a timer). Local time 08:00-21:00 only; at most 3 notifications per subscription per sweep.
   async sweep() {
     let n = 0; for (const [id, sub] of await this.kv.scan('pushsub')) {
       const local = new Date(this.now() + sub.tz * 60e3), hr = local.getUTCHours(); if (hr < 8 || hr >= 21) continue;
       const today = Math.floor(local.getTime() / 864e5); let c = 0, changed = false;
       for (const r of sub.reminders) { if (c >= 3) break; const days = dayNum(r.due) - today, st = stageFor(days); if (st === null) continue; const key = r.id + '@' + st; if (sub.sent[key]) continue;
-        const res = await this.deliver(sub, { title: 'RiderKit: ' + r.title, body: r.title + ' ' + stageText(r, days) + '.', tag: 'rk-' + r.id, url: './#' + (r.kind === 'doc' ? 'docs' : 'service'), ttl: 86400 });
+        const res = await this.deliver(sub, { title: APP_NAME + ': ' + r.title, body: r.title + ' ' + stageText(r, days) + '.', tag: 'rk-' + r.id, url: './#' + (r.kind === 'doc' ? 'docs' : 'service'), ttl: 86400 });
         if (res === 'gone') { await this.kv.del('pushsub', id); changed = false; break; }
         if (res === 'ok') { sub.sent[key] = this.now(); c++; n++; changed = true; } else if (res === 'bad') { await this.kv.del('pushsub', id); changed = false; break; } }
       if (changed) await this.kv.set('pushsub', id, sub, sub.syncedAt + SUB_TTL);

@@ -1,6 +1,6 @@
 (() => {
 const $ = id => document.getElementById(id);
-const C = Core;
+const C = Core; { const an = document.getElementById('appName'); if (an) an.textContent = C.APP_NAME; document.title = C.APP_NAME; }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // ---------- IndexedDB ----------
@@ -503,8 +503,8 @@ async function gEnter(kind) {
   } catch (e) { gMsg(e.status === 404 ? 'No group with that code.' : e.message); }
 }
 $('gCreate').onclick = () => gEnter('create'); $('gJoin').onclick = () => gEnter('join');
-$('gShare').onclick = async () => { const url = location.origin + location.pathname + '?join=' + G.sess.code; const text = 'Join my ride on RiderKit: code ' + G.sess.code;
-  try { if (navigator.share) await navigator.share({ title: 'RiderKit group ride', text, url }); else { await navigator.clipboard.writeText(url); gMsg('Link copied: ' + url); } } catch { gMsg('Share link: ' + url); } };
+$('gShare').onclick = async () => { const url = location.origin + location.pathname + '?join=' + G.sess.code; const text = 'Join my ride on ' + C.APP_NAME + ': code ' + G.sess.code;
+  try { if (navigator.share) await navigator.share({ title: C.APP_NAME + ' group ride', text, url }); else { await navigator.clipboard.writeText(url); gMsg('Link copied: ' + url); } } catch { gMsg('Share link: ' + url); } };
 async function gLife(act, body) { const s = G.sess; if (!s) return; const r = await gApi('POST', '/' + encodeURIComponent(s.code) + '/' + act, Object.assign({ token: s.token }, body || {})); if (r.state) gApply(r.state); return r; }
 $('gEndTrip').onclick = async () => { if (!G.sess || !confirm('End your trip? You stop sharing your location. The group keeps going for riders still out, and you can rejoin with the code.')) return;
   try { const r = await gLife('endtrip'); if (r.closed) gForgetLast(); gStop(r.closed ? 'Your trip has ended. You were the last rider, so the group is finished.' : 'Your trip has ended. The group keeps going for the others. Tap Rejoin if you start again.'); } catch (e) { if (!gGone(e)) gMsg(e.message); } };
@@ -524,7 +524,7 @@ $('gLeave').onclick = async () => { const s = G.sess; if (!s) return; try { awai
 
 // ---------- GPX export / import ----------
 function downloadGPX(r) {
-  const name = 'riderkit-' + new Date(r.start).toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.gpx';
+  const name = 'malhiva-' + new Date(r.start).toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.gpx';
   const blob = new Blob([C.toGPX(r)], { type: 'application/gpx+xml' });
   const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(u), 5000);
@@ -656,7 +656,7 @@ async function renderHome() {
   const tp = ['front', 'rear'].filter(p => D.tyres && D.tyres[p] && C.tyreStatus(D.tyres[p], D.odo, now));
   $('hTyre').innerHTML = tp.length ? tp.map((p, i) => { const t = C.tyreStatus(D.tyres[p], D.odo, now); const cls = t.state === 'replace' ? 'red' : t.state === 'watch' ? 'am' : 'cy';
     return (i ? '<div class="sep"></div>' : '') + `<div class="mini">${ringCard(Math.min(100, t.lifePct * 100), cls, Math.round(t.lifePct * 100) + '%')}<div class="tx"><b>${p === 'front' ? 'Front' : 'Rear'} tyre</b> <small>${esc(D.tyres[p].brand || '')}</small><br><span>${fmtNum(t.kmSince)} km since fitted${t.daysSince != null ? ' · ' + t.daysSince + ' d' : ''}</span><br><small>Inspect tread &amp; damage in ${fmtNum(t.kmToCheck)} km (every ${fmtNum(t.checkKm)} km)</small><br>${t.pressureDue ? `<span class="soon">${ico('warn')}Check pressure now</span> <small>(${t.pressureAgo == null ? 'never logged' : t.pressureAgo + ' days ago'}; weekly is typical)</small>` : `<span class="okc">${ico('check')}Pressure checked ${t.pressureAgo} d ago</span>`}${t.state !== 'ok' ? `<br><span class="${t.state === 'replace' ? 'due' : 'soon'}">${t.state === 'replace' ? 'Past typical replace-by guide' : 'Nearing typical replace-by guide'}</span>` : ''}</div></div>`; }).join('') + '<small class="hint">Ring = km since fitted vs a generic 25,000 km guide (not a limit; follow your tyre maker). Wear depends on tread depth, age and damage - inspect by eye.</small>'
-    : `<p class="hint">Tell RiderKit when your tyres were fitted to get km-since-fitted, inspection and pressure reminders.</p><button class="primary small" data-go="service">Add tyre details</button>`;
+    : `<p class="hint">Tell Malhiva when your tyres were fitted to get km-since-fitted, inspection and pressure reminders.</p><button class="primary small" data-go="service">Add tyre details</button>`;
   // docs
   const dl = Object.keys(C.DOC_TYPES).map(k => ({ type: k, name: C.DOC_TYPES[k], expiry: (D.docs[k] || {}).expiry || '' })); const al = C.docAlerts(dl.filter(x => x.expiry), now);
   $('hDocs').innerHTML = al.length ? al.map(a => `<div class="alert-row ${a.state === 'expired' ? 'bad' : ''}"><b>${esc(a.doc.name)}</b><span class="${a.state === 'expired' ? 'due' : 'soon'}">${esc(a.label)}</span></div>`).join('')
@@ -832,7 +832,7 @@ async function exportBackup() {
   const d = await db(); const kv = await new Promise((res, rej) => { const t = d.transaction('kv', 'readonly'), o = t.objectStore('kv'), ks = o.getAllKeys(), vs = o.getAll(); t.oncomplete = () => { const m = {}; ks.result.forEach((k, i) => m[k] = vs.result[i]); res(m); }; t.onerror = () => rej(t.error); });
   const bk = C.buildBackup({ rides: out, maint, kv }, Date.now(), 'v5');
   const json = JSON.stringify(bk), blob = new Blob([json], { type: 'application/json' }), a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = 'riderkit-backup-' + todayIso() + '.json'; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  a.href = URL.createObjectURL(blob); a.download = 'malhiva-backup-' + todayIso() + '.json'; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   await kvSet('lastBackup', Date.now()); const c = C.validateBackup(bk).counts;
   return `Backup saved (${(json.length / 1048576).toFixed(2)} MB): ${c.rides} rides, ${c.photos} photos, ${c.maint} service items, ${c.vehicles} vehicles, ${c.fuel} fill-ups.`;
 }
@@ -947,7 +947,7 @@ async function pttStart() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { st.textContent = 'Voice is not supported on this browser or device. Use the quick messages instead.'; P.busy = false; return; }
   let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
   catch (e) { P.busy = false; st.textContent = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'PermissionDeniedError')
-      ? 'Microphone permission denied. Allow the microphone for RiderKit in your browser/phone settings to talk. Quick messages still work.'
+      ? 'Microphone permission denied. Allow the microphone for Malhiva in your browser/phone settings to talk. Quick messages still work.'
       : e && e.name === 'NotFoundError' ? 'No microphone found on this device.' : 'Could not start the microphone: ' + (e && e.message || e); return; }
   if (P.wantStop) { stream.getTracks().forEach(t => t.stop()); P.busy = false; st.textContent = 'Hold the button while you speak.'; return; }
   const mime = pttMime(); let rec; try { rec = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 16000 }, mime ? { mimeType: mime } : {})); } catch (e) { stream.getTracks().forEach(t => t.stop()); P.busy = false; st.textContent = 'Could not record audio on this device.'; return; }

@@ -1,4 +1,4 @@
-// RiderKit extras UI (stages 1-7). Loaded after app.js; talks to app.js through window.__rkApp (see end of app.js).
+// Malhiva extras UI (stages 1-7). Loaded after app.js; talks to app.js through window.__rkApp (see end of app.js).
 (() => {
 'use strict';
 const $ = id => document.getElementById(id), X = window.Extra, A = window.__rkApp, K = window.__rk;
@@ -33,10 +33,10 @@ async function renderRem() {
   const el = $('remBox'); if (!el) return; const list = await collectReminders(); const sup = supportsPush(), perm = 'Notification' in window ? Notification.permission : 'unsupported';
   const sub = sup ? await pushSubState() : null; const today = X.todayNum();
   const up = list.map(r => ({ ...r, days: X.dayNum(r.due) - today })).filter(r => r.days <= 60).sort((a, b) => a.days - b.days).slice(0, 6);
-  let status = !('Notification' in window) ? 'This browser cannot show notifications. Reminders still appear inside RiderKit (banner + Home).'
-    : perm === 'denied' ? 'Notifications are blocked for this site in your browser settings. Reminders still appear inside RiderKit.'
+  let status = !('Notification' in window) ? 'This browser cannot show notifications. Reminders still appear inside Malhiva (banner + Home).'
+    : perm === 'denied' ? 'Notifications are blocked for this site in your browser settings. Reminders still appear inside Malhiva.'
     : sub ? 'On. Push reminders are sent at 30, 7 and 1 days before, on the day, and once when overdue (between 8:00 and 21:00).'
-    : perm === 'granted' ? 'Allowed, but push is not set up (' + (sup ? 'tap Turn on' : 'push is not supported here') + '). Due reminders show when you open RiderKit.' : 'Off.';
+    : perm === 'granted' ? 'Allowed, but push is not set up (' + (sup ? 'tap Turn on' : 'push is not supported here') + '). Due reminders show when you open Malhiva.' : 'Off.';
   el.innerHTML = `<p id="remStatus">${esc(status)}</p>` + (up.length ? '<ul class="remlist">' + up.map(r => `<li><b>${esc(r.title)}</b> &ndash; ${esc(X.phrase(r.days).replace(/^is /, '').replace(/^was /, ''))}</li>`).join('') + '</ul>' : '<p class="hint">No dated reminders yet. Add expiry dates to documents or last-done dates to service items.</p>')
     + `<div class="row">${sub ? '<button id="remOff" class="small">Turn off</button><button id="remTest" class="small">Send test</button>' : (perm === 'denied' || !('Notification' in window) ? '' : '<button id="remOn" class="primary small">Turn on reminders</button>')}</div>`;
   if ($('remOn')) $('remOn').onclick = enablePush; if ($('remOff')) $('remOff').onclick = disablePush; if ($('remTest')) $('remTest').onclick = testPush;
@@ -49,9 +49,9 @@ async function enablePush() {
     const { key } = await jfetch('GET', '/api/push/key'); const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription(); if (sub) { const cur = new Uint8Array(sub.options.applicationServerKey || []); const want = X.urlB64ToBytes(key); if (cur.length !== want.length || cur.some((v, i) => v !== want[i])) { await sub.unsubscribe(); sub = null; } }
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: X.urlB64ToBytes(key) });
-    if (!(await syncReminders(sub))) throw new Error('could not reach the RiderKit server');
+    if (!(await syncReminders(sub))) throw new Error('could not reach the Malhiva server');
     try { localStorage.setItem('rk-push', '1'); } catch {} toast('Reminders on'); await renderRem();
-  } catch (e) { await renderRem(); const s = $('remStatus'); if (s) s.textContent = 'Could not turn on push (' + e.message + '). Reminders still appear inside RiderKit and as notifications when you open it.'; }
+  } catch (e) { await renderRem(); const s = $('remStatus'); if (s) s.textContent = 'Could not turn on push (' + e.message + '). Reminders still appear inside Malhiva and as notifications when you open it.'; }
 }
 async function disablePush() { const sub = await pushSubState(); if (sub) { try { await jfetch('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }); } catch {} try { await sub.unsubscribe(); } catch {} } try { localStorage.removeItem('rk-push'); } catch {} await renderRem(); }
 async function testPush() { const sub = await pushSubState(); if (!sub) return; await syncReminders(sub); try { const r = await jfetch('POST', '/api/push/test', { endpoint: sub.endpoint }); toast(r.ok ? 'Test sent. It should arrive in a moment.' : 'The push service did not accept it (' + r.result + ').'); } catch (e) { toast(e.message); } }
@@ -119,7 +119,7 @@ const canSpeak = () => 'speechSynthesis' in window && typeof SpeechSynthesisUtte
 function say(text) { NV.spoken.push(text); if (NV.spoken.length > 50) NV.spoken.shift(); window.__rkLastSpeech = text; if (!NV.voice || !canSpeak()) return false;
   try { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-IN'; u.rate = 1; u.volume = 1; speechSynthesis.speak(u); return true; } catch { return false; } }
 function navInit() { const cb = $('navVoice'); if (!cb) return; cb.checked = NV.voice && canSpeak(); cb.disabled = !canSpeak();
-  $('navNote').textContent = canSpeak() ? 'Spoken prompts use your phone\'s text-to-speech and need the screen on and RiderKit open. Auto re-route asks the OSRM demo server for a new route when you leave the route (at most once per 25 s, 6 per 10 min).' : 'This browser has no speech synthesis, so turn prompts are shown on screen only.';
+  $('navNote').textContent = canSpeak() ? 'Spoken prompts use your phone\'s text-to-speech and need the screen on and Malhiva open. Auto re-route asks the OSRM demo server for a new route when you leave the route (at most once per 25 s, 6 per 10 min).' : 'This browser has no speech synthesis, so turn prompts are shown on screen only.';
   cb.onchange = () => { NV.voice = cb.checked; localStorage.setItem('rk-nav-voice', cb.checked ? '1' : '0'); }; $('navTest').onclick = () => { const ok = say('Voice prompts are on. In 200 metres, turn left.'); if (!ok) toast(canSpeak() ? 'Voice prompts are switched off.' : 'This device cannot speak prompts.'); }; }
 function navRender(o) { const card = $('navCard'), G = A.G; if (!card) return; if (!NV.nav || !G.sess) { card.hidden = true; return; } card.hidden = false;
   let main = '', sub = ''; if (NV.rerouting) { main = 'Re-routing...'; sub = 'You left the route.'; } else if (o && o.arrived) { main = 'You have arrived'; } else if (o && o.off) { main = 'Off route'; sub = 'Looking for a new route. Use "Route from my location" if this persists.'; }
@@ -150,7 +150,7 @@ $('liveStart').onclick = async () => { $('liveMsg').textContent = 'Creating link
   catch (e) { $('liveMsg').textContent = 'Could not start sharing: ' + e.message; } };
 $('liveStop').onclick = async () => { const s = LV.sess; if (!s) return; try { await jfetch('POST', '/api/live/' + s.id + '/stop', { key: s.key }, 8000); } catch {} lvEnd('Sharing stopped. The link no longer shows your location.'); };
 $('liveCopy').onclick = async () => { try { await navigator.clipboard.writeText($('liveLink').value); $('liveMsg').textContent = 'Link copied.'; } catch { $('liveLink').select(); $('liveMsg').textContent = 'Press and hold the link to copy it.'; } };
-$('liveShare').onclick = async () => { const url = $('liveLink').value, text = 'Follow my ride live (read-only link, expires): ' + url; try { if (navigator.share) await navigator.share({ title: 'RiderKit live location', text, url }); else { window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener'); } } catch {} };
+$('liveShare').onclick = async () => { const url = $('liveLink').value, text = 'Follow my ride live (read-only link, expires): ' + url; try { if (navigator.share) await navigator.share({ title: Core.APP_NAME + ' live location', text, url }); else { window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener'); } } catch {} };
 window.__rkLive = LV; setTimeout(lvResume, 800);
 
 // ===== Stage 5: map tile cache (viewed tiles only; see sw.js + lib-extra TILE policy) =====
@@ -196,8 +196,8 @@ const rcBlob = () => RC.blob ? Promise.resolve(RC.blob) : new Promise(ok => RC.c
 function recapOpen(ride) { let md = $('recapModal'); if (!md) { md = document.createElement('div'); md.id = 'recapModal'; md.className = 'recap-modal'; md.setAttribute('role', 'dialog'); md.setAttribute('aria-modal', 'true'); md.setAttribute('aria-label', 'Ride recap card');
     md.innerHTML = '<div class="recap-box"><canvas id="rcCanvas" aria-label="Ride recap preview"></canvas><label class="chk"><input type="checkbox" id="rcHide" checked> Hide the first and last 300 m (keeps home private)</label><p id="rcNote" class="hint" role="status"></p><div class="row"><button id="rcShare" class="primary small">Share</button><button id="rcSave" class="small">Save image</button><button id="rcClose" class="small">Close</button></div><p id="rcMsg" class="hint" role="status"></p></div>';
     document.body.appendChild(md); RC.canvas = $('rcCanvas'); $('rcHide').onchange = recapDraw; $('rcClose').onclick = () => { md.hidden = true; };
-    const saveImg = async () => { const b = await rcBlob(), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'riderkit-ride-' + (RC.model.date || 'recap').replace(/\s+/g, '-') + '.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); $('rcMsg').textContent = 'Image saved to your downloads.'; }; $('rcSave').onclick = saveImg;
-    $('rcShare').onclick = async () => { const b = await rcBlob(), f = new File([b], 'riderkit-ride.png', { type: 'image/png' }); try { if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: 'My ride on RiderKit', text: 'My ride: ' + RC.model.kmText + ' km' }); $('rcMsg').textContent = ''; } else { await saveImg(); $('rcMsg').textContent = 'Sharing images is not supported here, so the image was saved instead.'; } } catch (e) { if (e.name !== 'AbortError') $('rcMsg').textContent = 'Could not share: ' + e.message; } };
+    const saveImg = async () => { const b = await rcBlob(), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'malhiva-ride-' + (RC.model.date || 'recap').replace(/\s+/g, '-') + '.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); $('rcMsg').textContent = 'Image saved to your downloads.'; }; $('rcSave').onclick = saveImg;
+    $('rcShare').onclick = async () => { const b = await rcBlob(), f = new File([b], 'malhiva-ride.png', { type: 'image/png' }); try { if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: 'My ride on ' + Core.APP_NAME, text: 'My ride: ' + RC.model.kmText + ' km' }); $('rcMsg').textContent = ''; } else { await saveImg(); $('rcMsg').textContent = 'Sharing images is not supported here, so the image was saved instead.'; } } catch (e) { if (e.name !== 'AbortError') $('rcMsg').textContent = 'Could not share: ' + e.message; } };
     md.addEventListener('keydown', e => { if (e.key === 'Escape') md.hidden = true; }); }
   RC.ride = ride; md.hidden = false; $('rcMsg').textContent = ''; recapDraw(); if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('800 80px Inter'), document.fonts.load('600 32px Inter')]).then(() => { if (!md.hidden) recapDraw(); }).catch(() => {}); $('rcClose').focus(); }
 window.__rkRecap = recapOpen; window.__rkRC = RC;

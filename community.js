@@ -1,5 +1,5 @@
 'use strict';
-// RiderKit community UI (account-only). Everything user-written is rendered with textContent (never innerHTML). Server enforces every rule; this file is only the front end.
+// Malhiva community UI (account-only). Everything user-written is rendered with textContent (never innerHTML). Server enforces every rule; this file is only the front end.
 (() => {
   const root = document.getElementById('cmRoot'); if (!root) return;
   const CM = { cfg: null, me: null, section: 'feed', msg: '', busy: false, sections: [], cache: {} };
@@ -33,7 +33,7 @@
   CM.confirm = (text, yes, cb) => { const box = h('div', { class: 'cm-modal', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'cm-sheet glass' }, h('p', {}, text), h('div', { class: 'row' }, h('button', { class: 'ghost', onclick: () => box.remove() }, 'Cancel'), h('button', { class: 'danger', id: 'cmConfirmYes', onclick: async () => { box.remove(); await cb(); } }, yes)))); document.body.append(box); };
 
   // ---- screens
-  function gate() { return h('div', { class: 'glass card' }, h('h3', {}, 'Community'), h('p', {}, 'Share rides, follow riders, join clubs and chat. You need a free RiderKit account (the rest of the app keeps working as a guest).'),
+  function gate() { return h('div', { class: 'glass card' }, h('h3', {}, 'Community'), h('p', {}, 'Share rides, follow riders, join clubs and chat. You need a free Malhiva account (the rest of the app keeps working as a guest).'),
     h('button', { class: 'primary', id: 'cmGoAcct', onclick: () => goTab('me') }, 'Sign in or create an account')); }
   function joinForm() {
     const hd = h('input', { id: 'cmHandle', placeholder: 'handle (3-20: a-z, 0-9, _)', maxlength: '20', autocapitalize: 'none', autocomplete: 'off', 'aria-label': 'Handle' }), nm = h('input', { id: 'cmName', placeholder: 'Display name (optional)', maxlength: '30', 'aria-label': 'Display name' });
@@ -88,7 +88,7 @@
       } catch (e) { toast(e.message, true); post.disabled = false; post.textContent = 'Post'; } finally { DR.busy = false; } } }, 'Post');
     box.append(h('h3', {}, 'New post'), DR.stats ? h('div', { class: 'hint', id: 'cmStatsLine' }, 'Ride summary: ' + fmtStats(DR.stats)) : null, thumbs, cap,
       canImg ? h('div', { class: 'row' }, h('button', { class: 'ghost', id: 'cmAddPhoto', onclick: () => file.click() }, 'Add photos (' + DR.photos.length + '/' + maxP + ')'), file) : h('p', { class: 'hint' }, 'Photo uploads are not available on this server yet.'),
-      h('p', { class: 'cm-warn' }, 'Photos can show your home, street signs or number plates. Check before you post. RiderKit shrinks photos and removes hidden location data (EXIF), but cannot blur plates. Posts never include GPS points.'),
+      h('p', { class: 'cm-warn' }, 'Photos can show your home, street signs or number plates. Check before you post. Malhiva shrinks photos and removes hidden location data (EXIF), but cannot blur plates. Posts never include GPS points.'),
       h('label', { class: 'cm-f' }, h('span', {}, 'Audience'), vis), p.visibility !== 'public' ? h('p', { class: 'hint' }, 'Your profile is private, so posts go to your followers only. Make it public in Me to post publicly.') : null,
       h('p', { class: 'hint' }, 'By posting you agree to the ', h('a', { href: 'community-rules.html', target: '_blank', rel: 'noopener' }, 'community rules'), '.'), post); return box; }
   CM.sections.push({ id: 'compose', label: 'Post', render: composeSection });

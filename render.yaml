@@ -18,7 +18,7 @@ services:
         sync: false
       - key: RESEND_API_KEY   # accounts: emailed codes (leave unset = accounts disabled in production)
         sync: false
-      - key: EMAIL_FROM       # e.g. RiderKit <no-reply@yourdomain.com>, must be on a domain verified in Resend
+      - key: EMAIL_FROM       # e.g. Malhiva <no-reply@yourdomain.com>, must be on a domain verified in Resend
         sync: false
       - key: DATABASE_URL     # accounts storage: Neon/Supabase Postgres URL. Unset = JSON file (LOST on every Render free restart/redeploy)
         sync: false

@@ -1,6 +1,7 @@
 'use strict';
 // Optional rider accounts. Guests keep working: nothing in the group/ride APIs requires an account.
 // Storage: KV (see kv.js). Namespaces: user(id), email(addr->id), phone(e164->id), sess(sha256(token)), pend(email|phone+purpose), meta(secret).
+const { APP_NAME } = require('./brand');
 const crypto = require('crypto'), { promisify } = require('util');
 const { HttpError, Limiter } = require('./groups');
 const scrypt = promisify(crypto.scrypt);
@@ -49,9 +50,9 @@ class Accounts {
   async register(ip, emailIn, pw) {
     this.need(this.emailEnabled, 'sign-up is not available yet'); this.limit('ip:' + ip, this.L.ip); this.limit('reg:' + ip, this.L.register, 'too many sign-ups from here, try later');
     const email = normEmail(emailIn); this.checkPassword(pw, email); const generic = { ok: true, verify: true };
-    if (await this.kv.get('email', email)) { await this.sendMail(email, 'RiderKit sign-up', 'Someone tried to create a RiderKit account with this email address, but one already exists. If it was you, sign in or use "Forgot password". If not, ignore this message.'); return generic; }
+    if (await this.kv.get('email', email)) { await this.sendMail(email, APP_NAME + ' sign-up', 'Someone tried to create a ' + APP_NAME + ' account with this email address, but one already exists. If it was you, sign in or use "Forgot password". If not, ignore this message.'); return generic; }
     const pwHash = await this.hash(pw); const code = await this.issueCode('signup', email, { pwHash }); if (code === null) return generic;
-    await this.sendMail(email, 'Your RiderKit verification code', 'Your RiderKit verification code is ' + code + '. It expires in 10 minutes. If you did not request it, ignore this email.'); return generic; }
+    await this.sendMail(email, 'Your ' + APP_NAME + ' verification code', 'Your ' + APP_NAME + ' verification code is ' + code + '. It expires in 10 minutes. If you did not request it, ignore this email.'); return generic; }
   async verifyEmail(ip, emailIn, code, ua) {
     this.need(this.emailEnabled, 'sign-up is not available yet'); this.limit('ip:' + ip, this.L.ip); this.limit('ver:' + ip, this.L.verifyIp); const email = normEmail(emailIn); const rec = await this.checkCode('signup', email, code);
     const u = { id: crypto.randomBytes(12).toString('hex'), email, phone: null, pwHash: rec.pwHash, createdAt: this.now() };
@@ -68,7 +69,7 @@ class Accounts {
   // ---- password reset
   async forgot(ip, emailIn) {
     this.need(this.emailEnabled, 'password reset is not available yet'); this.limit('ip:' + ip, this.L.ip); this.limit('fgi:' + ip, this.L.forgotIp); const email = normEmail(emailIn); this.limit('fge:' + email, this.L.forgotEmail, 'too many reset requests for this address, try later');
-    const id = await this.kv.get('email', email); if (id) { const code = await this.issueCode('reset', email); if (code !== null) await this.sendMail(email, 'RiderKit password reset code', 'Your RiderKit password reset code is ' + code + '. It expires in 10 minutes. If you did not ask to reset your password, ignore this email; your password has not changed.'); }
+    const id = await this.kv.get('email', email); if (id) { const code = await this.issueCode('reset', email); if (code !== null) await this.sendMail(email, APP_NAME + ' password reset code', 'Your ' + APP_NAME + ' password reset code is ' + code + '. It expires in 10 minutes. If you did not ask to reset your password, ignore this email; your password has not changed.'); }
     return { ok: true }; }
   async reset(ip, emailIn, code, newPw, ua) {
     this.need(this.emailEnabled, 'password reset is not available yet'); this.limit('ip:' + ip, this.L.ip); this.limit('ver:' + ip, this.L.verifyIp); const email = normEmail(emailIn); this.checkPassword(newPw, email);
@@ -87,7 +88,7 @@ class Accounts {
   // ---- phone OTP (disabled unless an SMS provider is configured)
   async phoneStart(ip, phoneIn, purpose = 'phone') {
     this.need(this.phoneEnabled, 'phone login is not enabled'); this.limit('ip:' + ip, this.L.ip); this.limit('smi:' + ip, this.L.smsIp, 'too many SMS requests, try later'); const phone = normPhone(phoneIn); this.limit('smp:' + phone, this.L.smsPhone, 'too many SMS requests for this number, try later'); this.limit('smd', this.L.smsDay, 'SMS limit reached for today');
-    const code = await this.issueCode(purpose, phone); if (code !== null) { try { await this.sms.send(phone, 'RiderKit code: ' + code + ' (valid 10 min)'); } catch (e) { console.error('sms failed:', e.message); throw new HttpError(503, 'could not send the SMS right now'); } } return { ok: true }; }
+    const code = await this.issueCode(purpose, phone); if (code !== null) { try { await this.sms.send(phone, APP_NAME + ' code: ' + code + ' (valid 10 min)'); } catch (e) { console.error('sms failed:', e.message); throw new HttpError(503, 'could not send the SMS right now'); } } return { ok: true }; }
   async phoneVerify(ip, phoneIn, code, ua) {
     this.need(this.phoneEnabled, 'phone login is not enabled'); this.limit('ip:' + ip, this.L.ip); this.limit('ver:' + ip, this.L.verifyIp); const phone = normPhone(phoneIn); await this.checkCode('phone', phone, code);
     let id = await this.kv.get('phone', phone), u = id && await this.kv.get('user', id);

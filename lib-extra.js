@@ -1,5 +1,6 @@
-// RiderKit extra pure logic (stages 1-7). Browser: window.Extra. Node: module.exports. No DOM, no network.
+// Malhiva extra pure logic (stages 1-7). Browser: window.Extra. Node: module.exports. No DOM, no network.
 (function (root) {
+  const APP_NAME = 'Malhiva'; // keep in sync with Core.APP_NAME (this file also runs in the service worker, where Core is absent)
   const pad = n => String(n).padStart(2, '0');
   const isoOf = ms => { const d = new Date(ms); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }; // local calendar day
   const dayNum = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); if (!m) return null; const t = Date.UTC(+m[1], +m[2] - 1, +m[3]); return new Date(t).toISOString().slice(0, 10) === s ? t / 864e5 : null; };
@@ -25,7 +26,7 @@
   function localPlan(reminders, shown, now, max) {
     shown = Object.assign({}, shown); const today = todayNum(now), show = []; max = max || 3;
     for (const r of reminders || []) { if (show.length >= max) break; const days = dayNum(r.due) - today, st = stageFor(days); if (st === null) continue; const key = r.id + '@' + st + '@' + r.due; if (shown[key]) continue;
-      shown[key] = today; show.push({ key, title: 'RiderKit: ' + r.title, body: r.title + ' ' + phrase(days) + '.', url: './#' + (r.kind === 'doc' ? 'docs' : 'service'), tag: 'rk-' + r.id }); }
+      shown[key] = today; show.push({ key, title: APP_NAME + ': ' + r.title, body: r.title + ' ' + phrase(days) + '.', url: './#' + (r.kind === 'doc' ? 'docs' : 'service'), tag: 'rk-' + r.id }); }
     for (const k of Object.keys(shown)) if (today - shown[k] > 400) delete shown[k]; return { show, shown };
   }
   const urlB64ToBytes = s => { const p = '='.repeat((4 - s.length % 4) % 4), b = (s + p).replace(/-/g, '+').replace(/_/g, '/'); const bin = typeof atob === 'function' ? atob(b) : Buffer.from(b, 'base64').toString('binary'); return Uint8Array.from(bin, c => c.charCodeAt(0)); };
@@ -96,7 +97,7 @@
   function tileEvict(index, max) { const ks = Object.keys(index || {}); if (ks.length <= (max || TILE.max)) return []; ks.sort((a, b) => index[a].f - index[b].f); return ks.slice(0, ks.length - (max || TILE.max)); }
   const isTileUrl = u => /^https:\/\/tile\.openstreetmap\.org\/\d{1,2}\/\d+\/\d+\.png$/.test(u);
 
-  // ===== Stage 6: expenses (integer paise; RiderKit only calculates, it never moves money) =====
+  // ===== Stage 6: expenses (integer paise; Malhiva only calculates, it never moves money) =====
   const hashN = str => { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; return h; };
   function parseRupees(str) { const t = String(str == null ? '' : str).replace(/[\u20b9,\s]/g, ''); if (!/^\d{1,7}(\.\d{1,2})?$/.test(t)) return null; const p = Math.round(parseFloat(t) * 100); return p >= 1 && p <= 10000000 ? p : null; }
   const fmtPaise = p => { const neg = p < 0; p = Math.abs(Math.round(p)); const r = Math.floor(p / 100), q = p % 100; return (neg ? '-' : '') + '\u20b9' + r.toLocaleString('en-IN') + (q ? '.' + String(q).padStart(2, '0') : ''); };
@@ -124,7 +125,7 @@
   }
   function drawRecap(ctx, m, W, H) { W = W || RECAP.W; H = H || RECAP.H; const F = 'Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
     const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#0f172a'); g.addColorStop(1, '#1e3a8a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#ffffff'; ctx.font = '700 54px ' + F; ctx.textAlign = 'left'; ctx.fillText('RiderKit', 80, 120); ctx.textAlign = 'right'; ctx.font = '500 40px ' + F; ctx.fillStyle = '#cbd5e1'; ctx.fillText(m.date, W - 80, 120);
+    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#ffffff'; ctx.font = '700 54px ' + F; ctx.textAlign = 'left'; ctx.fillText(APP_NAME, 80, 120); ctx.textAlign = 'right'; ctx.font = '500 40px ' + F; ctx.fillStyle = '#cbd5e1'; ctx.fillText(m.date, W - 80, 120);
     const bx = 80, by = 190, bw = W - 160, bh = 640; ctx.fillStyle = 'rgba(255,255,255,0.07)'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 36); ctx.fill(); } else ctx.fillRect(bx, by, bw, bh);
     if (m.shape.length > 1) { const pad = 70, s = Math.min(bw, bh) - pad * 2, cx = bx + bw / 2, cy = by + bh / 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 14; ctx.beginPath(); m.shape.forEach((p, i) => { const x = cx + p[0] * s, y = cy + p[1] * s; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
       const dot = (p, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx + p[0] * s, cy + p[1] * s, 20, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.stroke(); }; dot(m.shape[0], '#22c55e'); dot(m.shape[m.shape.length - 1], '#f97316'); }

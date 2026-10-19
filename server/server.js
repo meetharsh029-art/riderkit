@@ -1,5 +1,5 @@
 'use strict';
-// RiderKit server: static app + group-ride API on one port. No dependencies.
+// Malhiva server: static app + group-ride API on one port. No dependencies.
 // Env: PORT (8080), TRUST_PROXY=1|0 (defaults to 1 when NODE_ENV=production; use X-Forwarded-For for rate limiting, only behind a trusted tunnel/proxy).
 const http = require('http'), fs = require('fs'), path = require('path');
 const { GroupStore, Limiter, HttpError } = require('./groups');
@@ -206,5 +206,5 @@ function createServer(opts = {}) {
   server.on('close', () => timers.forEach(clearInterval));
   server.communityInstance = () => _comm; server.store = store; server.live = live; server.push = () => push(); return server;
 }
-if (require.main === module) { const port = +process.env.PORT || 8080; createServer().listen(port, '0.0.0.0', () => console.log('RiderKit server on :' + port)); }
+if (require.main === module) { const port = +process.env.PORT || 8080; createServer().listen(port, '0.0.0.0', () => console.log(require('./brand').APP_NAME + ' server on :' + port)); }
 module.exports = { createServer };

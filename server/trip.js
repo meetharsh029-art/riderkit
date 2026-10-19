@@ -1,6 +1,6 @@
 'use strict';
 // Group extras: shared expenses (amounts in paise, integer) and request/planned stops. Mixed into GroupStore; in memory with the group (vanishes when the group is deleted).
-// Money: RiderKit only RECORDS who paid what and computes who owes whom. It never moves money.
+// Money: Malhiva only RECORDS who paid what and computes who owes whom. It never moves money.
 const crypto = require('crypto');
 const STOP_TYPES = { fuel: 'Fuel', food: 'Food / tea', rest: 'Rest', washroom: 'Washroom', photo: 'Photo stop', other: 'Other' };
 const T = { maxExpenses: 100, maxPaise: 10000000, maxStops: 20, stopTtlMs: 12 * 3600e3 };

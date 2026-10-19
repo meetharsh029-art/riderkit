@@ -1,5 +1,6 @@
 // Pure logic, usable in browser (window.Core) and Node (module.exports) for tests.
 (function (root) {
+  const APP_NAME = 'Malhiva'; // single display-name constant (UI reads Core.APP_NAME; server has server/brand.js)
   const R = 6371008.8; // metres
   const rad = d => d * Math.PI / 180;
   function haversine(a, b) {
@@ -101,11 +102,11 @@
   const xmlUnesc = s => String(s).replace(/&(lt|gt|quot|apos|amp|#\d+|#x[0-9a-fA-F]+);/g, (m, g) => ({ lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' }[g] || (g[1] === 'x' ? String.fromCodePoint(parseInt(g.slice(2), 16)) : String.fromCodePoint(+g.slice(1)))));
   // ride: {start(ms), points:[{lat,lon,t(ms)}], name?, notes?}
   function toGPX(ride, name) {
-    const nm = name || ride.name || 'RiderKit ride ' + new Date(ride.start).toISOString();
+    const nm = name || ride.name || APP_NAME + ' ride ' + new Date(ride.start).toISOString();
     const pts = (ride.points || []).filter(p => isFinite(p.lat) && isFinite(p.lon));
     const trkpts = pts.map(p => `      <trkpt lat="${Number(p.lat).toFixed(6)}" lon="${Number(p.lon).toFixed(6)}">` +
       (p.t ? `<time>${new Date(p.t).toISOString()}</time>` : '') + '</trkpt>').join('\n');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="RiderKit" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">\n` +
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="${APP_NAME}" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">\n` +
       `  <metadata><name>${xmlEsc(nm)}</name>${ride.start ? `<time>${new Date(ride.start).toISOString()}</time>` : ''}</metadata>\n` +
       `  <trk>\n    <name>${xmlEsc(nm)}</name>\n    <trkseg>\n${trkpts}${trkpts ? '\n' : ''}    </trkseg>\n  </trk>\n</gpx>\n`;
   }
@@ -454,11 +455,11 @@
   const BACKUP_KV_SKIP = ['wx', 'demo'];
   function buildBackup(data, now, appVersion) {
     const kv = {}; Object.keys(data.kv || {}).forEach(k => { if (!BACKUP_KV_SKIP.includes(k)) kv[k] = data.kv[k]; });
-    return { app: 'riderkit', schema: 1, appVersion: appVersion || 'v5', exportedAt: new Date(now == null ? Date.now() : now).toISOString(), data: { rides: data.rides || [], maint: data.maint || [], kv } };
+    return { app: 'malhiva', schema: 1, appVersion: appVersion || 'v5', exportedAt: new Date(now == null ? Date.now() : now).toISOString(), data: { rides: data.rides || [], maint: data.maint || [], kv } };
   }
   function validateBackup(o) {
-    const errors = []; if (!o || typeof o !== 'object' || Array.isArray(o)) return { ok: false, errors: ['Not a RiderKit backup (not a JSON object)'], counts: null };
-    if (o.app !== 'riderkit') errors.push('Not a RiderKit backup (missing app marker)');
+    const errors = []; if (!o || typeof o !== 'object' || Array.isArray(o)) return { ok: false, errors: ['Not a ' + APP_NAME + ' backup (not a JSON object)'], counts: null };
+    if (o.app !== 'malhiva' && o.app !== 'riderkit') errors.push('Not a ' + APP_NAME + ' backup (missing app marker)');
     if (o.schema !== 1) errors.push('Unsupported backup version: ' + o.schema);
     const d = o.data; if (!d || typeof d !== 'object') errors.push('Backup has no data section');
     else { if (!Array.isArray(d.rides)) errors.push('rides must be a list'); if (!Array.isArray(d.maint)) errors.push('maint must be a list'); if (!d.kv || typeof d.kv !== 'object' || Array.isArray(d.kv)) errors.push('kv must be an object');
@@ -488,6 +489,6 @@
     return { value: { type, message: msg, contact: String(contact || '').trim().slice(0, 200), meta: { ver: String(env.ver || ''), ua: String(env.ua || '').slice(0, 300), platform: String(env.platform || ''), lang: String(env.lang || ''), screen: String(env.screen || ''), standalone: !!env.standalone, online: !!env.online } } }; }
   const fbQueueAdd = (q, item, cap = 20) => { const a = (Array.isArray(q) ? q : []).concat([item]); return a.slice(-cap); };
   const fbShouldRetry = status => status === 0 || status === 429 || status >= 500; // network error / throttled / server trouble -> keep queued; other 4xx -> drop
-  const api = { buildFeedback, fbQueueAdd, fbShouldRetry, VEHICLE_TYPES, FUELS, suggestSchedule, normalizeVehicle, editVehicle, vehicleName, vehicleOdo, nextDue, markDone, scheduleItems, monthsToDays, daysToMonths, rideStats, gridCells, cellOf, thin, nextService, tyreStatus, TYRE_GUIDE, demoData, CELL_DEG, groupFlags, fmtAgo, fmtDist, normCode, codeFromSearch, gmapsLink, stepText, parseRoute, DOC_TYPES, docStatus, docAlerts, dayNum, toGPX, parseGPX, DEFAULT_CONTACTS, telLink, shareLocationLinks, haversine, totalDistance, acceptFix, kmh, fmtDuration, fmtKm, fmtINR, CrashDetector, alertLinks, maintStatus, wmoInfo, sampleRoute, sampleCount, wxRouteUrl, wxDestUrl, parseOpenMeteo, rainAlerts, routeWeatherSummary, wxKey, wxFresh, fmtWxAge, validateFuel, normalizeFuel, fuelStats, detectStops, STOP_KINDS, buildBackup, validateBackup, BACKUP_KV_SKIP, ALERT_TYPES, ALERT_LABEL, alertLabel, alertRows, freshAlerts, alertNavLink };
+  const api = { APP_NAME, buildFeedback, fbQueueAdd, fbShouldRetry, VEHICLE_TYPES, FUELS, suggestSchedule, normalizeVehicle, editVehicle, vehicleName, vehicleOdo, nextDue, markDone, scheduleItems, monthsToDays, daysToMonths, rideStats, gridCells, cellOf, thin, nextService, tyreStatus, TYRE_GUIDE, demoData, CELL_DEG, groupFlags, fmtAgo, fmtDist, normCode, codeFromSearch, gmapsLink, stepText, parseRoute, DOC_TYPES, docStatus, docAlerts, dayNum, toGPX, parseGPX, DEFAULT_CONTACTS, telLink, shareLocationLinks, haversine, totalDistance, acceptFix, kmh, fmtDuration, fmtKm, fmtINR, CrashDetector, alertLinks, maintStatus, wmoInfo, sampleRoute, sampleCount, wxRouteUrl, wxDestUrl, parseOpenMeteo, rainAlerts, routeWeatherSummary, wxKey, wxFresh, fmtWxAge, validateFuel, normalizeFuel, fuelStats, detectStops, STOP_KINDS, buildBackup, validateBackup, BACKUP_KV_SKIP, ALERT_TYPES, ALERT_LABEL, alertLabel, alertRows, freshAlerts, alertNavLink };
   if (typeof module !== 'undefined') module.exports = api; else root.Core = api;
 })(typeof self !== 'undefined' ? self : this);

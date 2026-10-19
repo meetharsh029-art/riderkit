@@ -1,5 +1,5 @@
 'use strict';
-// RiderKit community: safety foundation + profiles (stages 0 and 1). Storage = the KV interface in kv.js (memory / file / Postgres), no extra dependency.
+// Malhiva community: safety foundation + profiles (stages 0 and 1). Storage = the KV interface in kv.js (memory / file / Postgres), no extra dependency.
 // Later stages extend Community.prototype from community-posts.js / community-social.js / community-chat.js.
 // Key design rule: one key per entity plus explicit prefix indexes, read with kv.range (never kv.scan on a big namespace during a request).
 const crypto = require('crypto');
@@ -10,7 +10,7 @@ const RULES_VERSION = 1;
 const REASONS = ['spam', 'harassment', 'nudity', 'violence', 'dangerous_riding', 'personal_info', 'other'];
 const KINDS = ['post', 'comment', 'profile', 'club', 'message', 'dm'];
 const AVATARS = ['helmet', 'bike', 'scooter', 'car', 'mountain', 'road', 'flag', 'bolt', 'compass', 'wrench', 'sun', 'moon'];
-const RESERVED = new Set(['admin', 'administrator', 'riderkit', 'support', 'moderator', 'mod', 'staff', 'official', 'help', 'system', 'root', 'null', 'undefined', 'deleted', 'everyone', 'me']);
+const RESERVED = new Set(['admin', 'administrator', 'riderkit', 'malhiva', 'support', 'moderator', 'mod', 'staff', 'official', 'help', 'system', 'root', 'null', 'undefined', 'deleted', 'everyone', 'me']);
 // Words that are never allowed in handles / names / club names, and that put posts + comments on hold (author-only, in the admin queue) instead of publishing.
 const BAD_RE = /\b(fuck\w*|bitch\w*|bastard|madarchod|bhenchod|chutiy\w*|nigger\w*|faggot|whore|slut|rapist)\b/i;
 const SPAM_RE = /\b(telegram|whatsapp\s*group|join\s+(my|our)\s+group|click\s+here|free\s+money|crypto|forex|investment\s+plan|earn\s+\$?\d+)\b/i;

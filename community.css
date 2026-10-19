@@ -1,4 +1,4 @@
-/* RiderKit community. Uses the theme variables from styles.css so light and dark both work. */
+/* Malhiva community. Uses the theme variables from styles.css so light and dark both work. */
 .cm-tabs{display:flex;gap:6px;overflow-x:auto;margin:6px 0 10px;padding-bottom:4px}
 .cm-tabs button{min-height:44px;padding:8px 14px;font-size:14px;border-radius:999px;white-space:nowrap;position:relative}
 .cm-tabs button.on{color:var(--cy2,#2563eb);border-color:var(--cy,#2563eb);background:var(--acc-soft,rgba(37,99,235,.1))}

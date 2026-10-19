@@ -1,4 +1,4 @@
-# RiderKit design pass (v10)
+# Malhiva design pass (v10)
 
 Before/after phone screenshots (390x844 @2x, light theme, same demo data): `screenshots/design/before/` and `screenshots/design/after/` (in the working copy, not in the deploy repo). Regenerate with `SHOTDIR=dir node tests/e2e.theme.js` and `SHOTDIR=dir node tests/shots.group.js`.
 

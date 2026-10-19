@@ -2,7 +2,7 @@
   "name": "riderkit",
   "version": "1.0.0",
   "private": true,
-  "description": "RiderKit: static PWA + group-ride API in one dependency-free Node server",
+  "description": "Malhiva: static PWA + group-ride API in one dependency-free Node server",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
