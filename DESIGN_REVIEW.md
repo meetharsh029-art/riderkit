@@ -1,4 +1,4 @@
-# Design review and pass (SW riderkit-v28)
+# Design review and pass (SW riderkit-v29)
 
 User feedback: "a lot of things need better design; the Start group ride button on Home doesn't look good; analyse the whole app."
 
@@ -6,7 +6,7 @@ User feedback: "a lot of things need better design; the Start group ride button 
 `tests/shots.design.js` (helper, not a test) screenshots every screen in light and dark at **390 px and 360 px** width (device scale 2, full page, a fresh browser per page so no state leaks): home (empty + demo data), ride, history, service, docs, help, feedback, hazards, weather, fuel, settings/SOS, sign-in, signed-in account, group setup, live group, community gate / join / feed / post / messages / clubs / profile. That is 23 screens x 2 themes x 2 widths = 92 images per pass.
 - Before: `screenshots/design-pass/before-<screen>-<theme>-<width>.png`
 - After: `screenshots/design-pass/after-<screen>-<theme>-<width>.png`
-- Group ride button: `screenshots/design-pass/compare-group-ride-button.png` (before/after, light on top, dark below)
+- Group ride button: `screenshots/design-pass/group-button-before-after.png` (superseded first pass: `compare-group-ride-button.png`)
 Full-page captures draw the fixed bottom nav at viewport height mid-page; that is a screenshot artefact, not a bug.
 
 ## Design system (now explicit, appended to styles.css as "v28 design pass")
@@ -18,13 +18,11 @@ Full-page captures draw the fixed bottom nav at viewport height mid-page; that i
 | Type | 12 caption / 14 secondary / 16 body / 18 emphasis / 22 section / 28 page title / 30-40 hero numerals (unchanged v9 scale) |
 | Touch | all buttons and chips >= 44 px, primary/secondary actions >= 52 px, gaps >= 8 px |
 
-## 1. Start group ride button (Home)
-Before: a half-width pill squeezed beside the ring (about 100 px wide at 390, stacked and cramped at 360), a thin grey outline in dark mode, no hierarchy beyond "second button".
-After:
-- The hero card is now ring + milestone text on top, and a full-width action stack below, identical at 390 and 360.
-- **Start ride** = primary: 60 px, solid black (light) / lime (dark), raised shadow.
-- **Start group ride** = strong secondary: 52 px, full width, 12 px below the primary, 1.5 px outline (black in light; lime outline on a faint lime tint in dark), a 36 px rounded icon chip with the group icon, bold 16 px label, trailing chevron to say "opens a flow". Visible hover/active/focus states.
-- Same element id (`#homeGroup`), still the next sibling of `#homeStart`, still `data-go="group"`.
+## 1. Group Ride button (Home) - v29 final
+User feedback after the first pass: it "still looks the same". Final decision: it is no longer a secondary outline button.
+- **Group Ride** (label shortened from "Start group ride") uses exactly the same style as **Start ride**: same fill (black in light, lime in dark), 60 px height, 16 px radius, 18 px / 800 font, raised `--sh2` shadow, 22 px icon (group icon), full width, 12 px gap. CSS: one shared "v29" block for `#homeStart,#homeGroup`; the old `.btn-group` rules were removed.
+- Same element id (`#homeGroup`), still the next sibling of `#homeStart`, still `data-go="group"`. SW cache is now `riderkit-v29`.
+- Screenshots: `screenshots/design-pass/home-group-button-final-light.png` / `-dark.png` (390 px); `group-button-before-after.png` (before, first-pass after, final light + dark).
 
 ## 2. Findings and fixes across the app
 | # | Finding | Where | Fix |
@@ -59,6 +57,7 @@ After:
 - Everything above was verified in headless Chrome only. Not verified on real phones: real-device font rendering, safe-area insets with the bottom nav on notched phones, one-hand reach, Android/iOS WebView differences (`:has()` is used for action rows; needs Chrome 105+/Safari 15.4+), and the lime-on-dark colours on OLED.
 
 ## Tests changed
-- `e2e.home.js`: group button >= 48 px, full width, shorter than the primary, icon + chevron, 8-16 px gap, light and dark styling, and no horizontal overflow at 360 px.
+- `e2e.home.js`: Group Ride label, and same height/width/radius/fill/font/shadow/colour as Start ride (light and dark), icon, 8-16 px gap.
 - `e2e.community.js`: no stray "null" text on the compose screen.
-- SW version assertions updated to `riderkit-v28`.
+- SW version assertions updated to `riderkit-v29`.
+

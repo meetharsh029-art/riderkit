@@ -279,11 +279,7 @@ header{padding-top:env(safe-area-inset-top);padding-bottom:0;min-height:46px}
 .mkadmin{color:var(--cy2);font-weight:600}
 #gLife .acts{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
 
-#homeGroup{margin-top:0;width:100%}
-html:not([data-theme=dark]) #homeGroup{background:#fff;border:2px solid var(--cy);color:var(--cy);font-weight:700}
 #fbForm label{display:block;font-weight:600;margin-top:10px}#fbSend{margin-top:12px;width:100%}
-#homeGroup{font-size:15px;padding-left:8px;padding-right:8px;gap:6px;white-space:nowrap;justify-content:center}#homeGroup .ic{flex:none;width:20px;height:20px}
-#homeGroup{font-size:14px;padding-left:4px;padding-right:4px}
 
 #msgToast{position:fixed;left:50%;transform:translateX(-50%);top:calc(60px + env(safe-area-inset-top));z-index:1200;width:min(92vw,520px);display:grid;gap:8px}
 .mtoast{padding:12px 14px;border-radius:16px;background:#1f2937;color:#fff;border:2px solid #ff7a1a;box-shadow:0 6px 24px rgba(0,0,0,.45);font-size:17px;display:flex;gap:10px;align-items:center;justify-content:space-between}
@@ -449,17 +445,6 @@ html[data-theme=dark] a:not(.btn):not(.skip){color:#bef264}
 .hero-side .hint{margin:0;font-size:var(--t-sec);line-height:1.4}
 .hero-cta{flex:1 1 100%;display:flex;flex-direction:column;gap:var(--sp3);min-width:0}
 #homeStart{min-height:60px;font-size:var(--t-em);border-radius:var(--rad-b);box-shadow:var(--sh2)}
-.btn-group{display:flex;align-items:center;gap:var(--sp3);width:100%;min-height:52px;padding:6px 12px 6px 8px;border-radius:var(--rad-b);font:700 16px/1.2 var(--font);text-align:left;cursor:pointer;border:1.5px solid #0a0a0a;background:#fff;color:#0a0a0a;box-shadow:var(--sh1);transition:background .15s,transform .05s}
-.btn-group:active{transform:scale(.99)}
-.btn-group .bg-ic{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:#0a0a0a;color:#fff}
-.btn-group .bg-ic .ic{width:20px;height:20px;margin:0}
-.btn-group .bg-tx{flex:1;min-width:0}
-.btn-group .bg-ch{flex:none;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;opacity:.7}
-html:not([data-theme=dark]) .btn-group:hover{background:#f4f4f5}
-html[data-theme=dark] .btn-group{background:rgba(163,230,53,.09);border-color:rgba(163,230,53,.7);color:#f4f4f5;box-shadow:none}
-html[data-theme=dark] .btn-group .bg-ic{background:#a3e635;color:#0a0a0a}
-html[data-theme=dark] .btn-group:hover{background:rgba(163,230,53,.16)}
-.btn-group:focus-visible{outline:3px solid var(--cy);outline-offset:2px}
 
 /* ---- Group ride: header card, setup row ---- */
 #gBox>.card:first-child .item{flex-direction:column;align-items:stretch;gap:var(--sp3)}
@@ -504,3 +489,12 @@ textarea::placeholder{white-space:normal}
 #themeCard label{display:block;margin-bottom:var(--sp2);font-size:13px;letter-spacing:.08em;text-transform:uppercase}
 #themeCard label b{font-weight:700}
 .hero-cta button{margin:0}
+
+#homeGroup{margin-top:0}
+/* v29: Home action pair - Group Ride is styled identically to Start ride */
+#homeStart,#homeGroup{min-height:60px;height:60px;font-size:var(--t-em);font-weight:800;border-radius:var(--rad-b);box-shadow:var(--sh2);animation:none;white-space:nowrap;justify-content:center}
+html:not([data-theme=dark]) #homeStart,html:not([data-theme=dark]) #homeGroup{background:var(--cy);color:#fff;border-color:transparent;box-shadow:var(--sh2)}
+html[data-theme=dark] #homeStart,html[data-theme=dark] #homeGroup{background:#a3e635;color:#0a0a0a;border-color:#a3e635}
+html[data-theme=dark] #homeStart:hover,html[data-theme=dark] #homeGroup:hover{background:#bef264}
+#homeStart .ic,#homeGroup .ic{width:22px;height:22px;flex:none}
+#homeGroup{margin-top:0}
