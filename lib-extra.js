@@ -137,15 +137,33 @@
   // ---- automatic SOS detector (crash + optional long stationary). Pure logic: feed it motion + speed samples. ----
   // Inputs: feedMotion({t ms, mag m/s2 incl. gravity}), feedSpeed({t ms, mps}), tick(t). Each returns null or {kind:'crash'|'stationary', reason}.
   // Crash = (impact peak >= impact OR speed drop >= decelMps2 * dt) while the rider was above minSpeed shortly before, FOLLOWED by a stop (speed <= stopSpeed for stopMs; motion-still when no fresh GPS speed).
-  const AUTOSOS = { impact: 30, g: 9.81, minSpeedMps: 5.5, speedAgeMs: 6000, decelMps2: 8, decelMinDrop: 8, stopSpeed: 1.5, stopMs: 3000, stillTol: 1.5, windowMs: 15000, cooldownMs: 60000, stationary: false, stationaryMs: 600000, gpsStaleMs: 60000, moveMps: 2.5 };
+  // Real-ride defaults (see CRASH_DETECTION.md). impact 30 m/s2 ~= 3.1 g total (incl. gravity); only counted if GPS speed was >= minSpeedMps (20 km/h) within speedAgeMs;
+  // must be followed by a stop (GPS speed <= stopSpeed) or, without fresh GPS, motion-stillness (|a| within stillTol of 1 g) lasting stopMs, starting within windowMs of the impact.
+  const AUTOSOS = { impact: 30, g: 9.81, minSpeedMps: 5.5, speedAgeMs: 6000, decelMps2: 8, decelMinDrop: 8, stopSpeed: 1.5, stopMs: 5000, stillTol: 1.5, windowMs: 10000, cooldownMs: 60000, stationary: false, stationaryMs: 600000, gpsStaleMs: 60000, moveMps: 2.5 };
+  // Sensor TEST mode only (Settings > Test crash detection): no speed gate, ~2 g, 2 s still. Never used for a real ride, never sends anything.
+  const AUTOSOS_TEST = { impact: 20, minSpeedMps: 0, stopMs: 2000, windowMs: 10000, cooldownMs: 3000, ignoreSpeed: true };
+  // Arming state for the on-screen indicator. st: { on, supported, perm:'granted'|'needed'|'denied'|'unsupported', data:true|false|null, active, hidden, minKmh }
+  function crashStatus(st) {
+    st = st || {}; const mk = (level, label, reason, extra) => Object.assign({ level, armed: level === 'on' || level === 'limited', label, reason, needPerm: false }, extra || {});
+    if (!st.on) return mk('off', 'Crash detection off', 'Switched off. Turn on \u201cAutomatic crash SOS\u201d on the Ride tab.');
+    if (st.perm === 'needed') return mk('off', 'Crash detection off: motion permission needed', 'This phone asks before an app may read the motion sensors. Tap \u201cAllow motion sensors\u201d.', { needPerm: true });
+    if (st.perm === 'denied') return mk('off', 'Crash detection off: motion permission denied', 'iPhone: fully close and reopen Malhiva, tap \u201cAllow motion sensors\u201d and choose Allow. Android Chrome: site settings \u203a Motion sensors \u203a Allow.', { needPerm: true });
+    const noMotion = !st.supported || st.perm === 'unsupported' || st.data === false;
+    const why = !st.supported || st.perm === 'unsupported' ? 'This browser has no motion sensors' : 'No motion data from the sensors yet';
+    if (!st.active) return noMotion ? mk('standby', 'Crash detection limited (standby)', why + ': only a sudden GPS speed drop can trigger it. Arms when you start a ride or join a group ride.')
+      : mk('standby', 'Crash detection ready (standby)', 'Arms automatically when you start a ride or join a group ride.');
+    if (st.hidden) return mk('paused', 'Crash detection paused', 'The screen is off or Malhiva is in the background. Keep the app open with the screen on.');
+    if (noMotion) return mk('limited', 'Crash detection on (GPS only)', why + ': only a sudden GPS speed drop can trigger it.');
+    return mk('on', 'Crash detection on', 'Watching for a hard impact (about ' + ((st.impact || 30) / 9.81).toFixed(1) + ' g) above ' + (st.minKmh || 20) + ' km/h followed by a stop. Keep the screen on.');
+  }
   class AutoSos {
     constructor(o) { this.o = Object.assign({}, AUTOSOS, o || {}); this.reset(); }
-    reset() { this.hist = []; this.cand = null; this.stopSince = null; this.stillSince = null; this.lastMoveT = null; this.moved = false; this.statFired = false; this.coolUntil = 0; this.lastSpeed = null; this.lastSpeedT = null; }
+    reset() { this.peak = 0; this.hist = []; this.cand = null; this.stopSince = null; this.stillSince = null; this.lastMoveT = null; this.moved = false; this.statFired = false; this.coolUntil = 0; this.lastSpeed = null; this.lastSpeedT = null; }
     recentMax(t) { let m = 0; for (const h of this.hist) if (t - h.t <= this.o.speedAgeMs && h.mps > m) m = h.mps; return m; }
     fire(t, kind, reason) { this.coolUntil = t + this.o.cooldownMs; this.cand = null; this.stopSince = null; this.stillSince = null; if (kind === 'stationary') this.statFired = true; return { kind, reason }; }
     feedMotion(s) {
-      const o = this.o; if (s.t < this.coolUntil) return null;
-      if (!this.cand) { if (s.mag >= o.impact && this.recentMax(s.t) >= o.minSpeedMps) { this.cand = { t: s.t, why: 'impact of ' + (s.mag / o.g).toFixed(1) + ' g' }; this.stopSince = null; this.stillSince = null; } return null; }
+      const o = this.o; if (s.mag > this.peak) this.peak = s.mag; if (s.t < this.coolUntil) return null;
+      if (!this.cand) { if (s.mag >= o.impact && (o.ignoreSpeed || this.recentMax(s.t) >= o.minSpeedMps)) { this.cand = { t: s.t, why: 'impact of ' + (s.mag / o.g).toFixed(1) + ' g' }; this.stopSince = null; this.stillSince = null; } return null; }
       if (s.t - this.cand.t < 500) return null;
       if (Math.abs(s.mag - o.g) <= o.stillTol) { if (this.stillSince === null) this.stillSince = s.t; } else this.stillSince = null;
       return this.check(s.t);
@@ -167,7 +185,7 @@
       if (this.cand) {
         if (t - this.cand.t > o.windowMs + o.stopMs) { this.cand = null; this.stopSince = null; this.stillSince = null; }
         else {
-          const gpsFresh = this.lastSpeedT != null && t - this.lastSpeedT <= o.speedAgeMs;
+          const gpsFresh = !o.ignoreSpeed && this.lastSpeedT != null && t - this.lastSpeedT <= o.speedAgeMs;
           if (gpsFresh) { if (this.stopSince !== null && t - this.stopSince >= o.stopMs && this.lastSpeed <= o.stopSpeed) return this.fire(t, 'crash', this.cand.why + ', then stopped'); }
           else if (this.stillSince !== null && t - this.stillSince >= o.stopMs) return this.fire(t, 'crash', this.cand.why + ', then no movement');
         }
@@ -178,6 +196,6 @@
     }
   }
 
-  const api = { AutoSos, AUTOSOS, RECAP, recapModel, drawRecap, parseRupees, fmtPaise, shares, balances, settleUp, STOP_LABEL, TILE, parseMaxAge, tileTtl, tileFresh, tileEvict, isTileUrl, hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
+  const api = { AutoSos, AUTOSOS, AUTOSOS_TEST, crashStatus, RECAP, recapModel, drawRecap, parseRupees, fmtPaise, shares, balances, settleUp, STOP_LABEL, TILE, parseMaxAge, tileTtl, tileFresh, tileEvict, isTileUrl, hav, project, buildNav, navUpdate, newNavState, navKeyOf, NAV, metresSay, PIN_TYPES, bboxAround, pinAge, pinLeft, inBox, mergePinCache, newDeviceId, isoOf, dayNum, todayNum, addDays, buildReminders, stageFor, phrase, localPlan, urlB64ToBytes, TYRE_AGE_DAYS, TYRE_PRESSURE_DAYS };
   if (typeof module !== 'undefined') module.exports = api; else root.Extra = api;
 })(typeof self !== 'undefined' ? self : this);
