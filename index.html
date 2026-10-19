@@ -65,10 +65,10 @@
           <circle class="ring-bg" cx="60" cy="60" r="52"/><circle id="heroArc" class="ring-fg" cx="60" cy="60" r="52" stroke="url(#gHero)" pathLength="100" stroke-dasharray="0 100"/></svg>
         <div class="hero-in"><small>TOTAL DISTANCE</small><i id="hKm">0</i><small>km</small></div>
       </div>
-      <div class="hero-side">
-        <div id="hMilestone" class="hint"></div>
+      <div class="hero-side"><div id="hMilestone" class="hint"></div></div>
+      <div class="hero-cta">
         <button id="homeStart" class="primary big"><svg class="ic"><use href="#i-ride"/></svg><span id="homeStartTxt">Start ride</span></button>
-        <button id="homeGroup" class="ghost big" type="button" data-go="group"><svg class="ic"><use href="#i-group"/></svg>Start group ride</button>
+        <button id="homeGroup" class="btn-group" type="button" data-go="group"><span class="bg-ic" aria-hidden="true"><svg class="ic"><use href="#i-group"/></svg></span><span class="bg-tx">Start group ride</span><svg class="ic bg-ch" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
       </div>
     </div>
     <div id="homeEmpty" class="glass empty" hidden>
@@ -262,7 +262,7 @@
         <input id="gName" aria-label="Your rider name" placeholder="Your rider name" maxlength="24" autocomplete="nickname">
         <button id="gCreate" class="primary">Create a new group</button>
         <button id="gRejoin" class="ghost" hidden></button>
-        <div class="row"><input id="gCode" aria-label="Ride code e.g. RIDE-4821" placeholder="Ride code e.g. RIDE-4821" maxlength="12" autocapitalize="characters"><button id="gJoin" class="primary">Join</button></div>
+        <div class="row"><input id="gCode" aria-label="Ride code e.g. RIDE-4821" placeholder="Ride code (RIDE-4821)" maxlength="12" autocapitalize="characters"><button id="gJoin" class="primary">Join</button></div>
         <small class="hint">No account. Your live location is shared with everyone who has the code, only while you are in the group. The group stays open as long as anyone is still on their trip. It closes when the admin cancels it or every rider has ended their trip, and your position is deleted from the server then. Keep this screen open: browsers pause GPS when the phone is locked.</small>
       </div>
     </div>
@@ -370,7 +370,7 @@
     <h2 class="h-title"><svg class="ic lg"><use href="#i-sos"/></svg>SOS &amp; settings</h2>
     <form id="setForm" class="glass card">
       <input id="setName" aria-label="Your name" placeholder="Your name">
-      <input id="setPhone" type="tel" aria-label="Emergency contact number e.g. +91 98765 43210" placeholder="Emergency contact number e.g. +91 98765 43210">
+      <input id="setPhone" type="tel" aria-label="Emergency contact number e.g. +91 98765 43210" placeholder="Emergency contact number">
       <input id="setPhone2" aria-label="Contact name" placeholder="Contact name">
       <select id="setVia" aria-label="Send alert via"><option value="sms">Send via SMS</option><option value="whatsapp">Send via WhatsApp</option></select>
       <label>Impact threshold (m/s², default 30 ≈ 3g)<input id="setImpact" type="number" value="30"></label>

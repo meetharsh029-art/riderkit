@@ -420,3 +420,87 @@ html[data-theme=dark] .leaflet-control-attribution{background:rgba(10,10,10,.8)!
 html[data-theme=dark] .leaflet-control-zoom a{background:#141416!important;color:#f4f4f5!important;border-color:#3f3f46!important}
 html[data-theme=dark] .glabel{background:rgba(244,244,245,.92);color:#0a0a0a}
 html[data-theme=dark] .map-empty{background:repeating-linear-gradient(0deg,transparent 0 31px,rgba(255,255,255,.05) 31px 32px),repeating-linear-gradient(90deg,transparent 0 31px,rgba(255,255,255,.05) 31px 32px),#141416}
+
+/* ===== v28 design pass (see DESIGN_REVIEW.md): one token set, one button system, calmer hierarchy =====
+   spacing 4/8/12/16/24 | radii 12 (controls) / 16 (buttons) / 20 (cards) | shadows sh1 (rest) sh2 (raised) | type 12/14/16/18/22/28 */
+:root{--sp1:4px;--sp2:8px;--sp3:12px;--sp4:16px;--sp5:24px;--rad-c:12px;--rad-b:16px;--rad-card:20px;--sh1:0 1px 2px rgba(10,10,10,.06),0 4px 14px rgba(10,10,10,.05);--sh2:0 2px 4px rgba(10,10,10,.12),0 8px 20px rgba(10,10,10,.14)}
+html[data-theme=dark]{--sh1:0 1px 0 rgba(255,255,255,.04) inset,0 6px 18px rgba(0,0,0,.35);--sh2:0 8px 24px rgba(0,0,0,.5)}
+h3{font-size:13px;margin-bottom:var(--sp3)}
+.glass{border-radius:var(--rad-card)}
+html:not([data-theme=dark]) .glass{border-radius:var(--rad-card);box-shadow:var(--sh1)}
+button,.btn{border-radius:var(--rad-b)}
+input,select,textarea{border-radius:var(--rad-c)}
+input::placeholder,textarea::placeholder{font-size:15px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+input[type=checkbox],input[type=radio]{accent-color:#0a0a0a}
+html[data-theme=dark] input[type=checkbox],html[data-theme=dark] input[type=radio]{accent-color:#a3e635}
+a{text-underline-offset:3px}
+html:not([data-theme=dark]) a:not(.btn){color:#1d4ed8}
+html[data-theme=dark] a:not(.btn){color:#bef264}
+/* primary actions that stand alone in a card/form fill the width (one rule, no content-width orphans) */
+.card>button.primary,form:not(.row)>button.primary,.card>button.ghost:not(.small),form:not(.row)>button.ghost:not(.small),.card>button.danger,form:not(.row)>button.danger{width:100%;margin-top:var(--sp2)}
+.card>input+button.primary,.card>input+button.ghost{margin-top:var(--sp3)}
+.card>.row{margin-top:var(--sp3)}
+.row>input{flex:1;min-width:0}.row>button{flex:1 1 auto;min-width:0}.row>input+button{flex:none}
+/* ---- Home hero: ring + milestone on top, actions stacked full width below ---- */
+.hero{flex-wrap:wrap;gap:var(--sp4) var(--sp4);padding:var(--sp4);align-items:center}
+.hero-ring{width:128px;height:128px}
+.hero-ring .big-n,.hero-in i{font-size:34px}
+.hero-side{flex:1;min-width:140px}
+.hero-side .hint{margin:0;font-size:var(--t-sec);line-height:1.4}
+.hero-cta{flex:1 1 100%;display:flex;flex-direction:column;gap:var(--sp3);min-width:0}
+#homeStart{min-height:60px;font-size:var(--t-em);border-radius:var(--rad-b);box-shadow:var(--sh2)}
+.btn-group{display:flex;align-items:center;gap:var(--sp3);width:100%;min-height:52px;padding:6px 12px 6px 8px;border-radius:var(--rad-b);font:700 16px/1.2 var(--font);text-align:left;cursor:pointer;border:1.5px solid #0a0a0a;background:#fff;color:#0a0a0a;box-shadow:var(--sh1);transition:background .15s,transform .05s}
+.btn-group:active{transform:scale(.99)}
+.btn-group .bg-ic{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:#0a0a0a;color:#fff}
+.btn-group .bg-ic .ic{width:20px;height:20px;margin:0}
+.btn-group .bg-tx{flex:1;min-width:0}
+.btn-group .bg-ch{flex:none;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;opacity:.7}
+html:not([data-theme=dark]) .btn-group:hover{background:#f4f4f5}
+html[data-theme=dark] .btn-group{background:rgba(163,230,53,.09);border-color:rgba(163,230,53,.7);color:#f4f4f5;box-shadow:none}
+html[data-theme=dark] .btn-group .bg-ic{background:#a3e635;color:#0a0a0a}
+html[data-theme=dark] .btn-group:hover{background:rgba(163,230,53,.16)}
+.btn-group:focus-visible{outline:3px solid var(--cy);outline-offset:2px}
+
+/* ---- Group ride: header card, setup row ---- */
+#gBox>.card:first-child .item{flex-direction:column;align-items:stretch;gap:var(--sp3)}
+#gCodeShow{font-size:22px;letter-spacing:.02em;white-space:nowrap}
+#gBox>.card:first-child .acts{display:flex;gap:var(--sp2);flex-wrap:nowrap}
+#gBox>.card:first-child .acts button{flex:1;min-width:0;padding:8px 10px;white-space:nowrap}
+#gSetup .card>button{margin-top:var(--sp3)}
+#gSetup .hint{margin-top:var(--sp4);color:var(--mut)}
+/* ---- chips (Hazards filter, pins) ---- */
+.chips{gap:var(--sp2)}
+.chips label{min-height:44px;padding:6px 14px;border-radius:999px;background:var(--glass2)}
+html:not([data-theme=dark]) .chips label{background:#fff;border-color:#c3cedc}
+html[data-theme=dark] .chips label{border-color:#52525b;background:transparent}
+/* ---- settings / forms ---- */
+label.chk,.chk{align-items:flex-start;gap:var(--sp3)}.chk input{flex:none;margin-top:2px}
+.cm-tabs{scroll-snap-type:x proximity;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);padding-right:28px;scrollbar-width:none}
+.cm-tabs::-webkit-scrollbar{display:none}.cm-tabs button{scroll-snap-align:start}
+.cm-actions{gap:var(--sp2)}.cm-actions button{min-height:44px;padding:6px 14px}
+.cm-post{padding:var(--sp4);border-radius:var(--rad-card)}
+.cm-av{flex:none}
+.cm-head,.cm-meta{min-width:0}
+.hero-ring{width:144px;height:144px}
+.hero-in{padding:0 12px}.hero-in small:first-child{font-size:10px;letter-spacing:.04em;white-space:nowrap}
+.stat i,.big-n{white-space:nowrap}
+@media (max-width:380px){.stat i,.big-n{font-size:26px}.hero-ring{width:132px;height:132px}.hero-in i{font-size:30px}}
+/* rows with actions: text on top, equal-width actions below (Help, Service schedule, tyres, Docs) */
+.card>.item:has(>.acts){flex-direction:column;align-items:stretch;gap:var(--sp3)}
+.card>.item:has(>.acts)>.acts{display:flex;flex-wrap:nowrap;gap:var(--sp2)}
+.card>.item:has(>.acts)>.acts>*{flex:1 1 0;min-width:0;white-space:nowrap;padding-left:10px;padding-right:10px}
+.card>.item:has(>.acts)>.acts>[aria-label]{flex:0 0 52px}
+.card>.item:has(>.acts)>.acts>.btn.call{display:inline-flex;align-items:center;justify-content:center;border-radius:var(--rad-b)}
+.card>.item>b+span,.card>.item>span:last-child{flex:none}
+.h-title{flex-wrap:nowrap;align-items:center}.h-title .ic{flex:none}
+.h-title .badge{flex:none}
+select{text-overflow:ellipsis}
+.card button.small:not(.ghost):not(.danger){border-radius:var(--rad-b)}
+textarea::placeholder{white-space:normal}
+.chips label{height:44px;padding:0 14px;line-height:1}
+.hero-cta{width:100%}
+@media (max-width:360px){.hero{flex-direction:row;align-items:center}.hero-side{min-width:120px}}
+#mcClear{display:flex;width:100%;margin:0 0 var(--sp3)}
+#themeCard label{display:block;margin-bottom:var(--sp2);font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+#themeCard label b{font-weight:700}
+.hero-cta button{margin:0}
