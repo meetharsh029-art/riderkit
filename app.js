@@ -113,7 +113,7 @@ $('btnStop').onclick = async () => {
   ride.end = Date.now(); ride.dur = (ride.end - ride.start) / 1000;
   ride.avgSpeed = ride.dur ? C.kmh(ride.dist / ride.dur) : 0;
   const r = ride; ride = null;
-  $('btnStart').hidden = false; $('btnStop').hidden = true;
+  $('btnStart').hidden = false; $('btnStop').hidden = true; renderCrashStatus();
   if (r.points.length < 2 && r.dist < 50 && !confirm('Very short ride with almost no GPS data. Save anyway?')) return;
   delete r.speed; r.stops = C.detectStops(r.points, window.__RK_STOP_SEC); r.vehicleId = (await activeVehicle()).active.id; r.id = await put('rides', r);
   $('gpsMsg').textContent = `Saved: ${C.fmtKm(r.dist)} km in ${C.fmtDuration(r.dur)}`;
@@ -275,43 +275,78 @@ const SOS_SEC = 15;
 let detector = null, motionHandler = null, sosTimer = null, sosState = null, autoCfg = { on: true, stat: false };
 const autoActive = () => !!(autoCfg.on && (ride || G.sess));
 const autoCfgFrom = s => ({ on: s.autoSos !== false, stat: !!s.autoStat, impact: s.impact || 30, minKmh: s.minSpeedKmh || 20, statMin: s.statMin || 10, ack: !!s.autoAck });
-async function loadAutoCfg() { autoCfg = autoCfgFrom((await kvGet('settings')) || {}); $('crashOn').checked = autoCfg.on; $('autoSosInfo').hidden = autoCfg.ack || !autoCfg.on; buildDetector(); return autoCfg; }
+async function loadAutoCfg() { autoCfg = autoCfgFrom((await kvGet('settings')) || {}); $('crashOn').checked = autoCfg.on; $('autoSosInfo').hidden = autoCfg.ack || !autoCfg.on; buildDetector(); renderCrashStatus(); return autoCfg; }
 function buildDetector() { detector = new window.Extra.AutoSos({ impact: autoCfg.impact, minSpeedMps: autoCfg.minKmh / 3.6, stationary: autoCfg.stat, stationaryMs: autoCfg.statMin * 60000 }); }
 async function saveSetting(patch) { const s = (await kvGet('settings')) || {}; Object.assign(s, patch); await kvSet('settings', s); return s; }
-async function ensureMotion() { // call from a tap where possible (iOS asks for permission only from a gesture)
-  if (!autoCfg.on) return;
-  if (typeof DeviceMotionEvent === 'undefined') { $('crashMsg').textContent = 'Motion sensors not available on this device/browser: automatic crash SOS can only use GPS speed here.'; return; }
-  if (typeof DeviceMotionEvent.requestPermission === 'function' && !ensureMotion.asked) { ensureMotion.asked = true;
-    try { if (await DeviceMotionEvent.requestPermission() !== 'granted') throw 0; } catch { $('crashMsg').textContent = 'Motion permission denied: automatic crash SOS will rely on GPS speed only.'; } }
-  if (!motionHandler) { let got = false;
-    motionHandler = e => { const a = e.accelerationIncludingGravity; if (!a || a.x == null) return; got = true; if (!autoActive()) return;
-      autoEvent(detector.feedMotion({ t: Date.now(), mag: Math.hypot(a.x, a.y, a.z) })); };
-    addEventListener('devicemotion', motionHandler);
-    setTimeout(() => { if (!got && autoCfg.on) $('crashMsg').textContent = 'No motion data received: this device may not support it (desktops usually do not). Speed-based detection still works.'; }, 3000); }
-  $('crashMsg').textContent = 'Automatic crash SOS armed while a ride or group trip is active. Keep the phone secured and the screen on.';
+// Motion permission / data state. iOS 13+ Safari needs DeviceMotionEvent.requestPermission() called directly inside a tap; Android/desktop need nothing.
+const MS = { supported: typeof DeviceMotionEvent !== 'undefined', perm: 'granted', data: null, attached: false, noDataTimer: null };
+if (!MS.supported) MS.perm = 'unsupported'; else if (typeof DeviceMotionEvent.requestPermission === 'function') MS.perm = 'needed';
+let crashTest = null; // sensor test session (Settings): { det, until, timer }
+function onMotion(e) { const a = e.accelerationIncludingGravity; if (!a || a.x == null) return;
+  if (!MS.data) { MS.data = true; if (MS.perm === 'needed') MS.perm = 'granted'; renderCrashStatus(); }
+  const smp = { t: Date.now(), mag: Math.hypot(a.x, a.y || 0, a.z || 0) };
+  if (crashTest) { const r = crashTest.det.feedMotion(smp); crashTestTick(); if (r && $('sos').hidden) { triggerSOS({ kind: 'sensortest', reason: r.reason + ' (test thresholds)' }); } }
+  if (autoActive()) autoEvent(detector.feedMotion(smp)); }
+function attachMotion() { if (!MS.supported || MS.attached) return; MS.attached = true; addEventListener('devicemotion', onMotion); armNoData(); }
+function armNoData() { clearTimeout(MS.noDataTimer); MS.noDataTimer = setTimeout(() => { if (!MS.data && MS.perm === 'granted' && !document.hidden) { MS.data = false; renderCrashStatus(); } }, 3000); }
+// Call from inside a tap handler, BEFORE any await, so iOS can show its prompt.
+function ensureMotion() {
+  attachMotion();
+  if (MS.perm !== 'needed' && MS.perm !== 'denied') { renderCrashStatus(); return Promise.resolve(MS.perm); }
+  let p; try { p = DeviceMotionEvent.requestPermission(); } catch (e) { p = Promise.reject(e); }
+  return Promise.resolve(p).then(r => { MS.perm = r === 'granted' ? 'granted' : 'denied'; if (MS.perm === 'granted') armNoData(); renderCrashStatus(); return MS.perm; },
+    () => { renderCrashStatus(); return MS.perm; }); // rejected = not called from a tap: stay "needed" so the Allow button stays visible
 }
+function crashState() { return window.Extra.crashStatus({ on: autoCfg.on, supported: MS.supported, perm: MS.perm, data: MS.data, active: !!(ride || G.sess), hidden: document.hidden, minKmh: autoCfg.minKmh, impact: autoCfg.impact }); }
+function renderCrashStatus() { const st = crashState();
+  document.querySelectorAll('.crashInd').forEach(el => { el.dataset.level = st.level; el.querySelector('.ciLabel').textContent = st.label; el.querySelector('.ciWhy').textContent = st.reason; const b = el.querySelector('.ciPerm'); if (b) b.hidden = !st.needPerm; });
+  window.__crashState = st; return st; }
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.ciPerm')) ensureMotion(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && MS.data === false) { MS.data = null; armNoData(); } renderCrashStatus(); });
+if (MS.perm === 'granted') attachMotion();
+else if (MS.perm === 'needed') { MS.attached = true; addEventListener('devicemotion', onMotion); // data arrives if already allowed earlier in this session
+  // Without a tap iOS rejects (NotAllowedError) and we stay "needed" (Allow button); if it was already decided, or the browser grants silently (Chrome), we learn it now.
+  try { Promise.resolve(DeviceMotionEvent.requestPermission()).then(r => { if (MS.perm === 'needed') { MS.perm = r === 'granted' ? 'granted' : 'denied'; if (MS.perm === 'granted') armNoData(); renderCrashStatus(); } }, () => {}); } catch {} }
+// ---- sensor test (never sends) ----
+const TEST_SEC = 60;
+function crashTestTick() { if (!crashTest) return; const d = crashTest.det, g = (d.peak / 9.81).toFixed(1), need = (d.o.impact / 9.81).toFixed(1), left = Math.max(0, Math.ceil((crashTest.until - Date.now()) / 1000));
+  $('ctPeak').textContent = MS.data ? 'Strongest jolt so far: ' + g + ' g (test needs ' + need + ' g, a real ride needs ' + (autoCfg.impact / 9.81).toFixed(1) + ' g at speed).' : 'Waiting for motion data...';
+  $('ctLeft').textContent = left + ' s left'; }
+function crashTestStart() { const pr = ensureMotion(); crashTestStop(true);
+  crashTest = { det: new window.Extra.AutoSos(window.Extra.AUTOSOS_TEST), until: Date.now() + TEST_SEC * 1000 };
+  $('ctPanel').hidden = false; $('ctStart').hidden = true; $('ctStop').hidden = false; $('ctResult').textContent = '';
+  crashTest.timer = setInterval(() => { if (!crashTest) return; if (crashTest.det.tick(Date.now()) && $('sos').hidden) triggerSOS({ kind: 'sensortest', reason: 'test' }); crashTestTick(); if (Date.now() > crashTest.until) crashTestStop(false, 'timeout'); }, 500);
+  crashTestTick(); window.__crashTest = () => crashTest; return pr; }
+function crashTestStop(silent, why) { if (!crashTest) return; const peak = crashTest.det.peak; clearInterval(crashTest.timer); crashTest = null; $('ctStart').hidden = false; $('ctStop').hidden = true;
+  if (silent) return; $('ctResult').textContent = why === 'timeout' ? (MS.data ? 'Test ended: no crash-like motion in ' + TEST_SEC + ' s (strongest jolt ' + (peak / 9.81).toFixed(1) + ' g). Shake harder, then leave the phone still.' : 'Test ended: no motion data was received. Crash detection cannot use the motion sensors in this browser.') : why === 'done' ? 'Sensors work: the test countdown ran. Nothing was sent to anyone.' : 'Test stopped. Nothing was sent.'; }
+$('ctStart').onclick = () => { crashTestStart(); };
+$('ctStop').onclick = () => crashTestStop(false, 'stop');
 function autoSpeed(mps) { if (autoActive() && mps != null && !isNaN(mps)) autoEvent(detector.feedSpeed({ t: Date.now(), mps })); }
-setInterval(() => { if (autoActive()) autoEvent(detector.tick(Date.now())); }, 1000);
+setInterval(() => { if (autoActive()) autoEvent(detector.tick(Date.now())); if (!document.hidden) renderCrashStatus(); }, 1000);
 function autoEvent(ev) { if (ev && $('sos').hidden) triggerSOS(ev); }
-$('crashOn').onchange = async e => { autoCfg.on = e.target.checked; await saveSetting({ autoSos: autoCfg.on, autoAck: true }); autoCfg.ack = true; $('autoSosInfo').hidden = true; $('crashMsg').textContent = autoCfg.on ? '' : 'Automatic crash SOS is OFF. Nothing will be sent automatically.'; if (autoCfg.on) ensureMotion(); };
+$('crashOn').onchange = async e => { autoCfg.on = e.target.checked; if (autoCfg.on) ensureMotion(); renderCrashStatus(); await saveSetting({ autoSos: autoCfg.on, autoAck: true }); autoCfg.ack = true; $('autoSosInfo').hidden = true; $('crashMsg').textContent = autoCfg.on ? '' : 'Automatic crash SOS is OFF. Nothing will be sent automatically.'; };
 $('autoSosKeep').onclick = async () => { autoCfg.ack = true; $('autoSosInfo').hidden = true; await saveSetting({ autoAck: true, autoSos: true }); };
-$('autoSosOff').onclick = async () => { autoCfg.on = false; autoCfg.ack = true; $('crashOn').checked = false; $('autoSosInfo').hidden = true; await saveSetting({ autoAck: true, autoSos: false }); $('crashMsg').textContent = 'Automatic crash SOS is OFF. Nothing will be sent automatically.'; };
+$('autoSosOff').onclick = async () => { autoCfg.on = false; renderCrashStatus(); autoCfg.ack = true; $('crashOn').checked = false; $('autoSosInfo').hidden = true; await saveSetting({ autoAck: true, autoSos: false }); $('crashMsg').textContent = 'Automatic crash SOS is OFF. Nothing will be sent automatically.'; };
 $('btnTestCrash').onclick = () => triggerSOS({ kind: 'test', reason: 'This is a test: nothing is sent to your group unless you let it run out.' });
 loadAutoCfg();
-window.__rkAutoSos = { feedSpeed: mps => autoSpeed(mps), get detector() { return detector; }, cfg: () => autoCfg };
+window.__rkAutoSos = { feedSpeed: mps => autoSpeed(mps), get detector() { return detector; }, cfg: () => autoCfg, ms: MS, status: () => renderCrashStatus() };
 
 const sosBeep = () => { try { const AC = window.AudioContext || window.webkitAudioContext, ac = sosBeep.ac ||= new AC(); const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = 1000; g.gain.value = 1; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + .35); } catch {} window.__sosBeeps = (window.__sosBeeps || 0) + 1; };
 async function triggerSOS(ev) {
   if (!$('sos').hidden) return; ev = ev && ev.kind ? ev : { kind: 'test', reason: '' };
   const s = (await kvGet('settings')) || {};
   let n = SOS_SEC; sosState = { ev, sent: false, group: false }; $('sos').hidden = false; $('sosSend').hidden = true; $('sosCancel').hidden = false; $('sosDone').hidden = true; $('sosStatus').textContent = '';
-  $('sosTitle').textContent = ev.kind === 'stationary' ? 'Stopped for a long time. Are you OK?' : ev.kind === 'test' ? 'Test: SOS countdown' : 'Crash detected?';
+  $('sosTitle').textContent = ev.kind === 'stationary' ? 'Stopped for a long time. Are you OK?' : ev.kind === 'test' ? 'Test: SOS countdown' : ev.kind === 'sensortest' ? 'TEST: crash detected. Nothing will be sent' : 'Crash detected?';
   $('sosWhy').textContent = ev.reason ? 'Why: ' + ev.reason : '';
+  $('sosLineTxt').textContent = ev.kind === 'sensortest' ? 'Test only, nothing will be sent. Ends in' : 'SOS will be sent automatically in';
   const upd = () => { $('sosCount').textContent = n; $('sosSec').textContent = n; };
   upd(); navigator.vibrate?.([500, 200, 500]); sosBeep();
   clearInterval(sosTimer); sosTimer = setInterval(() => { n--; upd(); sosBeep(); navigator.vibrate?.(300);
-    if (n <= 0) { clearInterval(sosTimer); fire(s, ev); } }, 1000);
+    if (n <= 0) { clearInterval(sosTimer); if (ev.kind === 'sensortest') sensorTestDone(); else fire(s, ev); } }, 1000);
 }
+function sensorTestDone() { // sensor test: never calls the group API or opens SMS/WhatsApp
+  $('sosCount').textContent = '\u2713'; $('sosCancel').hidden = true; $('sosDone').hidden = false; $('sosSec').parentElement.hidden = true; sosState.sent = false; sosState.test = true; window.__sensorTestDone = (window.__sensorTestDone || 0) + 1;
+  $('sosStatus').textContent = 'Test finished. Your sensors work. In a real crash an SOS would now go to your group and your emergency contact. Nothing was sent.'; crashTestStop(false, 'done'); }
 async function fire(s, ev) {
   $('sosCount').textContent = '!'; $('sosCancel').hidden = true; $('sosDone').hidden = false; $('sosSec').parentElement.hidden = true; sosState.sent = true; window.__sosFired = (window.__sosFired || 0) + 1;
   const loc = G.fix ? { lat: G.fix.lat, lon: G.fix.lng, acc: G.fix.acc, t: G.fix.t } : lastLoc; const notes = [];
@@ -326,8 +361,8 @@ async function fire(s, ev) {
   $('sosLink').href = href;
   if (ev.kind !== 'test') location.href = href; // may be blocked without a user tap; the button above is the fallback
 }
-$('sosCancel').onclick = () => { clearInterval(sosTimer); $('sos').hidden = true; sosState = null; detector?.reset(); detector && (detector.coolUntil = Date.now() + 30000); };
-$('sosDone').onclick = async () => { const st = sosState; $('sos').hidden = true; $('sosSec').parentElement.hidden = false; sosState = null; detector?.reset(); detector && (detector.coolUntil = Date.now() + 30000);
+$('sosCancel').onclick = () => { clearInterval(sosTimer); $('sos').hidden = true; const wasTest = sosState && sosState.ev && sosState.ev.kind === 'sensortest'; sosState = null; if (wasTest) { $('ctResult').textContent = 'Sensors work: the test countdown started (you tapped I\'M OK). Nothing was sent.'; crashTestStop(true); return; } detector?.reset(); detector && (detector.coolUntil = Date.now() + 30000); };
+$('sosDone').onclick = async () => { const st = sosState; $('sos').hidden = true; $('sosSec').parentElement.hidden = false; sosState = null; if (st && st.test) return; detector?.reset(); detector && (detector.coolUntil = Date.now() + 30000);
   if (st && st.group && G.sess) await cancelMyAlert(); };
 
 // ---------- group ride (real: server/ + SSE + POST) ----------
@@ -373,7 +408,7 @@ function gStop(msg) {
   gSave(null); G.es?.close(); G.es = null; clearInterval(G.poll); clearInterval(G.send);
   if (G.watch != null) navigator.geolocation.clearWatch(G.watch); G.watch = null; G.firstFix = false; try { G.wake?.release(); } catch {}
   Object.values(G.markers).forEach(m => m.remove()); G.markers = {}; G.destMk?.remove(); G.destMk = null; G.routeLine?.remove(); G.routeLine = null; G.route = null; G.routedFor = null; G.snap = null;
-  gShow('gBox', false); gShow('gSetup', true); gShow('gDest', false); gMsg(msg || ''); gRejoinBtn();
+  renderCrashStatus(); gShow('gBox', false); gShow('gSetup', true); gShow('gDest', false); gMsg(msg || ''); gRejoinBtn();
 }
 function gConnect() {
   G.es?.close(); const s = G.sess; if (!s || !window.EventSource) return;
@@ -494,6 +529,7 @@ $('gFit').onclick = gFit;
 $('gRoute').onclick = () => maybeRoute(true);
 $('gDestClear').onclick = async () => { try { await gApi('POST', '/' + encodeURIComponent(G.sess.code) + '/destination', { token: G.sess.token, lat: null }); } catch (e) { gMsg(e.message); } };
 async function gEnter(kind) {
+  ensureMotion(); // must run inside the tap (iOS motion permission), before any await
   const name = await gName(); if (!name) { gMsg('Enter your rider name first.'); return; }
   try {
     let r;

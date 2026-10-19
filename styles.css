@@ -498,3 +498,12 @@ html[data-theme=dark] #homeStart,html[data-theme=dark] #homeGroup{background:#a3
 html[data-theme=dark] #homeStart:hover,html[data-theme=dark] #homeGroup:hover{background:#bef264}
 #homeStart .ic,#homeGroup .ic{width:22px;height:22px;flex:none}
 #homeGroup{margin-top:0}
+/* crash detection arming indicator */
+.crashInd{display:flex;align-items:center;gap:10px;padding:8px 12px;margin:8px 0;border-radius:12px;background:var(--glass2,rgba(127,127,127,.08));border:1px solid var(--line,rgba(127,127,127,.25));color:var(--tx)}
+.crashInd .ciDot{flex:none;width:12px;height:12px;border-radius:50%;background:#9ca3af}
+.crashInd .ciTxt{flex:1;min-width:0;display:flex;flex-direction:column}.crashInd .ciTxt small{margin:0}
+.crashInd[data-level=on] .ciDot{background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.25)}
+.crashInd[data-level=limited] .ciDot,.crashInd[data-level=paused] .ciDot{background:#f59e0b}
+.crashInd[data-level=standby] .ciDot{background:#3b82f6}
+.crashInd[data-level=off] .ciDot{background:#dc2626}
+.crashInd .ciPerm{flex:none}

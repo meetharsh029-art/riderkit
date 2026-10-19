@@ -146,6 +146,7 @@
       <button id="btnStop" class="danger big" hidden><svg class="ic"><use href="#i-close"/></svg>Stop &amp; save</button>
     </div>
     <label class="switch tgl"><input type="checkbox" id="crashOn"><span class="knob" aria-hidden="true"></span><span>Automatic crash SOS <small>(motion sensors + GPS)</small></span></label>
+    <div class="crashInd" id="crashInd" role="status" aria-live="polite" data-level="off"><span class="ciDot" aria-hidden="true"></span><div class="ciTxt"><b class="ciLabel">Crash detection</b><small class="ciWhy"></small></div><button type="button" class="ciPerm primary small" hidden>Allow motion sensors</button></div>
     <div id="crashMsg" class="hint" role="status" aria-live="polite"></div>
     <div class="glass card" id="autoSosInfo" hidden><b>Automatic crash SOS is ON</b>
       <small>While a ride or group trip is active, Malhiva watches the motion sensors and your speed. If it sees a hard impact or sudden stop after riding at speed, a full-screen 15-second countdown starts. If you do not tap <b>I'M OK</b>, an SOS alert with your last location is sent to your group (and a message to your emergency contact opens). <b>It only works while Malhiva is open with the screen on</b>, can miss a crash or trigger by mistake, and its limits have not been tested on a real phone. Change it any time in Settings.</small>
@@ -270,6 +271,7 @@
     <div id="gBox" hidden>
       <div class="glass card"><div class="item"><div>Group <b id="gCodeShow"></b><br><small id="gConn"></small></div><div class="acts"><button id="gAlertBtn" class="danger small" type="button" aria-label="Breakdown or SOS alert"><svg class="ic"><use href="#i-sos"/></svg>Alert</button><button id="gAlertCancel" class="ghost small" type="button" hidden>Cancel alert</button><button id="gShare" class="primary small">Share link</button><button id="gLeave" class="ghost small">Leave</button></div></div></div>
       <div id="gAlert" class="glass card warn" hidden></div>
+      <div class="crashInd" id="crashIndGrp" role="status" aria-live="polite" data-level="off"><span class="ciDot" aria-hidden="true"></span><div class="ciTxt"><b class="ciLabel">Crash detection</b><small class="ciWhy"></small></div><button type="button" class="ciPerm primary small" hidden>Allow motion sensors</button></div>
       <div id="gmap"></div>
       <div class="row"><button id="gPick" class="ghost small"><svg class="ic"><use href="#i-pin"/></svg>Pick destination on map</button><button id="gFit" class="ghost small">Fit everyone</button></div>
       <div class="glass card" id="gTalk"><h3 style="margin-top:0">Talk to the group</h3>
@@ -368,6 +370,12 @@
 
   <section id="tab-me" class="tab">
     <h2 class="h-title"><svg class="ic lg"><use href="#i-sos"/></svg>SOS &amp; settings</h2>
+    <div class="glass card" id="crashCard"><h3 style="margin-top:0">Crash detection</h3>
+      <div class="crashInd" id="crashIndSet" role="status" aria-live="polite" data-level="off"><span class="ciDot" aria-hidden="true"></span><div class="ciTxt"><b class="ciLabel">Crash detection</b><small class="ciWhy"></small></div><button type="button" class="ciPerm primary small" hidden>Allow motion sensors</button></div>
+      <small class="hint">During a ride or group ride, a hard impact (about 3 g) while you were above your minimum speed, followed by about 5 s of standing still, starts a 15-second countdown before SOS is sent. Light drops, potholes or tossing the phone at home do not count, because there is no riding speed. Use the test below to check that your sensors work.</small>
+      <div class="row"><button id="ctStart" class="primary small" type="button">Test crash detection</button><button id="ctStop" class="ghost small" type="button" hidden>Stop test</button></div>
+      <div id="ctPanel" hidden><p class="hint"><b>Test mode (nothing is sent to anyone).</b> Uses a lower threshold (about 2 g) and no speed check. Shake the phone hard or toss it onto a bed, then leave it lying still for 2 seconds. A countdown marked TEST should appear.</p><p id="ctPeak" class="hint" role="status"></p><small id="ctLeft"></small></div>
+      <div id="ctResult" class="hint" role="status" aria-live="polite"></div></div>
     <form id="setForm" class="glass card">
       <input id="setName" aria-label="Your name" placeholder="Your name">
       <input id="setPhone" type="tel" aria-label="Emergency contact number e.g. +91 98765 43210" placeholder="Emergency contact number">
@@ -377,7 +385,7 @@
       <label>Auto SOS: only count an impact if speed was above (km/h, default 20)<input id="setMinSpeed" type="number" min="5" max="80" value="20"></label>
       <label class="switch tgl"><input type="checkbox" id="setAutoStat"><span class="knob" aria-hidden="true"></span><span>Also alert if I stay stopped for a long time during a ride <small>(off by default)</small></span></label>
       <label>Long stop after (minutes, default 10)<input id="setStatMin" type="number" min="3" max="120" value="10"></label>
-      <small class="hint">Automatic SOS turns on with the &ldquo;Automatic crash SOS&rdquo; switch on the Ride tab. It works only with the app open and the screen on; thresholds are untested on real devices.</small>
+      <small class="hint">Automatic SOS turns on with the &ldquo;Automatic crash SOS&rdquo; switch on the Ride tab. It works only with the app open and the screen on. See the Crash detection card above for its live status; thresholds have not yet been verified in real crashes.</small>
       <button class="primary">Save</button>
       <div id="setMsg" class="hint"></div>
     </form>
@@ -406,7 +414,7 @@
     <h1><svg class="ic xl"><use href="#i-sos"/></svg><br><span id="sosTitle">Crash detected?</span></h1>
     <div id="sosCount">15</div>
     <p id="sosWhy"></p>
-    <p>SOS will be sent automatically in <b id="sosSec">15</b>s</p>
+    <p><span id="sosLineTxt">SOS will be sent automatically in</span> <b id="sosSec">15</b>s</p>
     <button id="sosCancel" class="primary big">I'M OK — CANCEL</button>
     <div id="sosStatus" role="alert"></div>
     <button id="sosDone" class="primary big" hidden>I'M OK — CLOSE</button>
