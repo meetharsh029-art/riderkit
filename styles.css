@@ -279,7 +279,7 @@ header{padding-top:env(safe-area-inset-top);padding-bottom:0;min-height:46px}
 .mkadmin{color:var(--cy2);font-weight:600}
 #gLife .acts{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
 
-#homeGroup{margin-top:10px;width:100%}
+#homeGroup{margin-top:0;width:100%}
 html:not([data-theme=dark]) #homeGroup{background:#fff;border:2px solid var(--cy);color:var(--cy);font-weight:700}
 #fbForm label{display:block;font-weight:600;margin-top:10px}#fbSend{margin-top:12px;width:100%}
 #homeGroup{font-size:15px;padding-left:8px;padding-right:8px;gap:6px;white-space:nowrap;justify-content:center}#homeGroup .ic{flex:none;width:20px;height:20px}
@@ -434,8 +434,8 @@ input::placeholder,textarea::placeholder{font-size:15px;text-overflow:ellipsis;o
 input[type=checkbox],input[type=radio]{accent-color:#0a0a0a}
 html[data-theme=dark] input[type=checkbox],html[data-theme=dark] input[type=radio]{accent-color:#a3e635}
 a{text-underline-offset:3px}
-html:not([data-theme=dark]) a:not(.btn){color:#1d4ed8}
-html[data-theme=dark] a:not(.btn){color:#bef264}
+html:not([data-theme=dark]) a:not(.btn):not(.skip){color:#1d4ed8}
+html[data-theme=dark] a:not(.btn):not(.skip){color:#bef264}
 /* primary actions that stand alone in a card/form fill the width (one rule, no content-width orphans) */
 .card>button.primary,form:not(.row)>button.primary,.card>button.ghost:not(.small),form:not(.row)>button.ghost:not(.small),.card>button.danger,form:not(.row)>button.danger{width:100%;margin-top:var(--sp2)}
 .card>input+button.primary,.card>input+button.ghost{margin-top:var(--sp3)}
